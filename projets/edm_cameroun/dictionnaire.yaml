@@ -1,0 +1,1440 @@
+# Dictionnaire du questionnaire « 03 » — EDM Équipements électriques Cameroun (1re source de vérité du projet).
+# Importé de reference/scripts_gs/EDM_ELECTRIQUE_TEMPS_REEL_V11.gs (ITEMS, EN, IDENT, ZONES, QUOTAS),
+# complété depuis des sources citées : titre français, aides Q19/Q20/Q23 et identification (V3, CONFIG.TITRE_FORM,
+# ITEMS[].aide, lignes 101-108 et 1117-1150) ; traductions (V11, EN) ; règles de cohérence (V11, coderFiche_).
+# Toute modification se fait ICI : formulaire, masque, SPSS et contrôles en sont régénérés.
+etude: EDM_EQUIPEMENTS_ELECTRIQUES_CAMEROUN
+version: '03'
+langue_reference: fr
+langues:
+- fr
+- en
+titre:
+  fr: Enquête - Distribution du matériel & équipements électriques au Cameroun
+  en: Survey - Distribution of electrical equipment and supplies in Cameroon
+statut: valide
+source: EDM_ELECTRIQUE_TEMPS_REEL_V11.gs
+codes_speciaux:
+  non_applicable: 97
+  ne_sait_pas: 98
+  non_reponse: 99
+  libelles:
+    '97':
+      fr: Non applicable
+      en: Not applicable
+    '98':
+      fr: NSP / Sans avis
+      en: Don't know / No opinion
+    '99':
+      fr: Non-réponse
+      en: No answer
+libelles_choix_multiple:
+  '1':
+    fr: Cité
+    en: Mentioned
+  '0':
+    fr: Non cité
+    en: Not mentioned
+mention_choix_multiple:
+  fr: (plusieurs réponses)
+  en: (several answers)
+sections:
+- id: S1
+  libelles:
+    fr: 1. Profil du répondant
+    en: 1. Respondent profile
+- id: S2
+  libelles:
+    fr: 2. Habitudes d'achat
+    en: 2. Buying habits
+- id: S3
+  libelles:
+    fr: 3. Marques
+    en: 3. Brands
+- id: S4
+  libelles:
+    fr: 4. Origine des produits
+    en: 4. Product origin
+- id: S5
+  libelles:
+    fr: 5. Gammes
+    en: 5. Product ranges
+- id: S6
+  libelles:
+    fr: 6. Freins à l'achat
+    en: 6. Barriers to purchase
+- id: S7
+  libelles:
+    fr: 7. Service client & SAV
+    en: 7. Customer service & after-sales
+- id: S8
+  libelles:
+    fr: 8. Canaux & achat en ligne
+    en: 8. Channels & online purchasing
+- id: S9
+  libelles:
+    fr: 9. Fidélisation
+    en: 9. Loyalty
+identification:
+- role: enqueteur
+  libelles:
+    fr: Identifiant enquêteur
+    en: Enumerator ID
+  type: choix_unique
+  obligatoire: true
+  donnee_personnelle: false
+- role: quartier
+  libelles:
+    fr: Quartier / zone (ex. Makepe)
+    en: Neighbourhood / area (e.g. Makepe)
+  type: texte
+  obligatoire: true
+  donnee_personnelle: false
+- role: site
+  libelles:
+    fr: Site précis / repère (ex. Makepe Saint-Tropez)
+    en: Exact site / landmark (e.g. Makepe Saint-Tropez)
+  type: texte
+  obligatoire: true
+  donnee_personnelle: false
+- role: nom
+  libelles:
+    fr: Nom de l'enquêté ou raison sociale
+    en: Respondent's name or company name
+  type: texte
+  obligatoire: true
+  donnee_personnelle: true
+- role: telephone
+  libelles:
+    fr: Téléphone de l'enquêté
+    en: Respondent's phone number
+  type: texte
+  obligatoire: true
+  aide:
+    fr: 9 chiffres, ex. 6XXXXXXXX (indicatif +237 facultatif)
+    en: 9 digits, e.g. 6XXXXXXXX (+237 prefix optional)
+  validation: ^(\+?237)?[ ]?[26]([ .]?[0-9]){8}$
+  message_validation:
+    fr: 'Numéro invalide : 9 chiffres commençant par 6 ou 2, avec ou sans +237.'
+  donnee_personnelle: true
+- role: email
+  libelles:
+    fr: E-mail de l'enquêté (facultatif)
+    en: Respondent's e-mail (optional)
+  type: texte
+  obligatoire: false
+  validation: email
+  message_validation:
+    fr: Adresse e-mail invalide.
+  donnee_personnelle: true
+- role: accord_recontact
+  libelles:
+    fr: L'enquêté accepte d'être recontacté à des fins commerciales
+    en: The respondent agrees to be contacted again for commercial purposes
+  type: choix_unique
+  obligatoire: true
+  aide:
+    fr: 'À lire à l''enquêté : « Acceptez-vous que vos coordonnées soient utilisées pour vous recontacter avec des offres commerciales ? Vos réponses au questionnaire
+      restent anonymes dans l''analyse. »'
+    en: 'Read to the respondent: “Do you agree that your contact details may be used to contact you again with commercial offers? Your answers to the questionnaire
+      remain anonymous in the analysis.”'
+  modalites:
+  - code: 1
+    libelles:
+      fr: Oui
+      en: 'Yes'
+  - code: 2
+    libelles:
+      fr: Non
+      en: 'No'
+  donnee_personnelle: false
+questions:
+- numero: 1
+  code: VOUSETES
+  section: S1
+  libelles:
+    fr: Vous êtes
+    en: You are
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Particulier
+      en: Individual
+  - code: 2
+    libelles:
+      fr: Entreprises (PME, Industries…)
+      en: Company (SME, industry…)
+  - code: 3
+    libelles:
+      fr: Électricien/artisan
+      en: Electrician/tradesperson
+  - code: 4
+    libelles:
+      fr: Entreprise BTP
+      en: Construction company
+  - code: 5
+    libelles:
+      fr: Revendeur/Grossiste/Distributeur
+      en: Reseller/Wholesaler/Distributor
+    alias:
+    - Revendeur/grossiste
+  role: cible
+  longueur: 500
+- numero: 2
+  code: SEXMAFEM
+  section: S1
+  libelles:
+    fr: Genre
+    en: Gender
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Homme
+      en: Male
+  - code: 2
+    libelles:
+      fr: Femme
+      en: Female
+  longueur: 500
+- numero: 3
+  code: AGEREPON
+  section: S1
+  libelles:
+    fr: Âge
+    en: Age
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: <25
+      en: <25
+  - code: 2
+    libelles:
+      fr: 25–34
+      en: 25–34
+  - code: 3
+    libelles:
+      fr: 35–44
+      en: 35–44
+  - code: 4
+    libelles:
+      fr: 45–54
+      en: 45–54
+  - code: 5
+    libelles:
+      fr: 55+
+      en: 55+
+  longueur: 500
+- numero: 4
+  code: VILLEREG
+  section: S1
+  libelles:
+    fr: Ville / région
+    en: City / region
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Douala
+      en: Douala
+  - code: 2
+    libelles:
+      fr: Yaoundé
+      en: Yaoundé
+  - code: 3
+    libelles:
+      fr: Bafoussam
+      en: Bafoussam
+  prerempli: ville
+  longueur: 500
+- numero: 5
+  code: REVMENME
+  section: S1
+  libelles:
+    fr: Revenu mensuel du ménage (FCFA)
+    en: Monthly household income (FCFA)
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: <100k
+      en: <100k
+  - code: 2
+    libelles:
+      fr: 100k–250k
+      en: 100k–250k
+  - code: 3
+    libelles:
+      fr: 250k–500k
+      en: 250k–500k
+  - code: 4
+    libelles:
+      fr: 500k–1M
+      en: 500k–1M
+  - code: 5
+    libelles:
+      fr: '>1M'
+      en: '>1M'
+  - code: 98
+    libelles:
+      fr: NSP
+      en: Don't know
+  longueur: 500
+- numero: 6
+  code: FREQACHA
+  section: S2
+  libelles:
+    fr: Fréquence d'achat
+    en: Purchase frequency
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Chaque semaine
+      en: Every week
+  - code: 2
+    libelles:
+      fr: 1–3×/mois
+      en: 1–3 times a month
+  - code: 3
+    libelles:
+      fr: Quelques fois/an
+      en: A few times a year
+  - code: 4
+    libelles:
+      fr: Rarement
+      en: Rarely
+  longueur: 500
+- numero: 7
+  code: LIEACHPR
+  section: S2
+  libelles:
+    fr: Lieu d'achat principal
+    en: Main place of purchase
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Quincaillerie
+      en: Hardware store
+  - code: 2
+    libelles:
+      fr: Grossiste spécialisé
+      en: Specialised wholesaler
+  - code: 3
+    libelles:
+      fr: Magasin spécialisé
+      en: Specialised shop
+  - code: 4
+    libelles:
+      fr: Marché
+      en: Market
+  - code: 5
+    libelles:
+      fr: Importateur
+      en: Importer
+  - code: 6
+    libelles:
+      fr: En ligne
+      en: Online
+  longueur: 500
+- numero: 8
+  code: MONMOYAC
+  section: S2
+  libelles:
+    fr: Montant moyen par achat (FCFA)
+    en: Average amount per purchase (FCFA)
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: <25k
+      en: <25k
+  - code: 2
+    libelles:
+      fr: 25k–100k
+      en: 25k–100k
+  - code: 3
+    libelles:
+      fr: 100k–500k
+      en: 100k–500k
+  - code: 4
+    libelles:
+      fr: 500k–2M
+      en: 500k–2M
+  - code: 5
+    libelles:
+      fr: '>2M'
+      en: '>2M'
+  longueur: 500
+- numero: 9
+  code: PRODACHE
+  section: S2
+  libelles:
+    fr: Produits achetés
+    en: Products purchased
+  type: choix_multiple
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Câbles/fils
+      en: Cables/wires
+    variable: PRACCABL
+  - code: 2
+    libelles:
+      fr: Appareillage/disjoncteurs
+      en: Switchgear/circuit breakers
+    variable: PRACAPPA
+  - code: 3
+    libelles:
+      fr: Prises/interrupteurs
+      en: Sockets/switches
+    variable: PRACPRIS
+  - code: 4
+    libelles:
+      fr: Luminaires
+      en: Light fittings
+    variable: PRACLUMI
+  - code: 5
+    libelles:
+      fr: Solaire/onduleurs
+      en: Solar/inverters
+    variable: PRACSOLA
+  - code: 6
+    libelles:
+      fr: Groupes électrogènes
+      en: Generators
+    variable: PRACGROU
+  longueur: 500
+- numero: 10
+  code: PAIEPRIV
+  section: S2
+  libelles:
+    fr: Paiement privilégié
+    en: Preferred payment method
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Espèces
+      en: Cash
+  - code: 2
+    libelles:
+      fr: Mobile Money
+      en: Mobile Money
+  - code: 3
+    libelles:
+      fr: Virement
+      en: Bank transfer
+  - code: 4
+    libelles:
+      fr: Crédit fournisseur
+      en: Supplier credit
+  longueur: 500
+- numero: 11
+  code: IMPOMARQ
+  section: S3
+  libelles:
+    fr: Importance de la marque
+    en: Importance of the brand
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Très importante
+      en: Very important
+  - code: 2
+    libelles:
+      fr: Importante
+      en: Important
+  - code: 3
+    libelles:
+      fr: Peu importante
+      en: Not very important
+  - code: 4
+    libelles:
+      fr: Pas importante
+      en: Not important
+  longueur: 500
+- numero: 12
+  code: MAACPLSO
+  section: S3
+  libelles:
+    fr: Marque achetée le plus souvent
+    en: Brand purchased most often
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Schneider
+      en: Schneider
+  - code: 2
+    libelles:
+      fr: Legrand
+      en: Legrand
+  - code: 3
+    libelles:
+      fr: Vectron
+      en: Vectron
+  - code: 4
+    libelles:
+      fr: Hager
+      en: Hager
+  - code: 5
+    libelles:
+      fr: ABB
+      en: ABB
+  - code: 6
+    libelles:
+      fr: Siemens
+      en: Siemens
+  - code: 7
+    libelles:
+      fr: Chint/chinoise
+      en: Chint/Chinese brand
+  - code: 8
+    libelles:
+      fr: Philips
+      en: Philips
+  - code: 9
+    libelles:
+      fr: JA Solar
+      en: JA Solar
+  - code: 10
+    libelles:
+      fr: Longi
+      en: Longi
+  - code: 11
+    libelles:
+      fr: Growatt
+      en: Growatt
+  autre:
+    code: 12
+    libelles:
+      fr: Autre
+      en: Other
+    variable: MAACAUTR
+    longueur: 80
+  longueur: 500
+- numero: 13
+  code: PRCRICHO
+  section: S3
+  libelles:
+    fr: Principal critère de choix
+    en: Main selection criterion
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Prix
+      en: Price
+  - code: 2
+    libelles:
+      fr: Qualité/durabilité
+      en: Quality/durability
+  - code: 3
+    libelles:
+      fr: Disponibilité
+      en: Availability
+  - code: 4
+    libelles:
+      fr: Notoriété
+      en: Reputation
+  - code: 5
+    libelles:
+      fr: Garantie/SAV
+      en: Warranty/after-sales service
+  - code: 6
+    libelles:
+      fr: Conformité normes
+      en: Compliance with standards
+  longueur: 500
+- numero: 14
+  code: ORIGPRIV
+  section: S4
+  libelles:
+    fr: Origine privilégiée
+    en: Preferred origin
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Europe
+      en: Europe
+  - code: 2
+    libelles:
+      fr: Asie
+      en: Asia
+  - code: 3
+    libelles:
+      fr: Amérique
+      en: America
+  - code: 4
+    libelles:
+      fr: Aucune préférence
+      en: No preference
+  longueur: 500
+- numero: 15
+  code: MEQUAFIA
+  section: S4
+  libelles:
+    fr: Meilleure qualité/fiabilité selon vous
+    en: Best quality/reliability in your opinion
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Europe
+      en: Europe
+  - code: 2
+    libelles:
+      fr: Asie
+      en: Asia
+  - code: 3
+    libelles:
+      fr: Amérique
+      en: America
+  - code: 98
+    libelles:
+      fr: Sans avis
+      en: No opinion
+  longueur: 500
+- numero: 16
+  code: MEILPRIX
+  section: S4
+  libelles:
+    fr: Meilleur prix selon vous
+    en: Best price in your opinion
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Europe
+      en: Europe
+  - code: 2
+    libelles:
+      fr: Asie
+      en: Asia
+  - code: 3
+    libelles:
+      fr: Amérique
+      en: America
+  - code: 98
+    libelles:
+      fr: Sans avis
+      en: No opinion
+  longueur: 500
+- numero: 17
+  code: ORINFACH
+  section: S4
+  libelles:
+    fr: L'origine influence votre achat
+    en: Origin influences your purchase
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Fortement
+      en: Strongly
+  - code: 2
+    libelles:
+      fr: Modérément
+      en: Moderately
+  - code: 3
+    libelles:
+      fr: Faiblement
+      en: Slightly
+  - code: 4
+    libelles:
+      fr: Pas du tout
+      en: Not at all
+  longueur: 500
+- numero: 18
+  code: GAACPLSO
+  section: S5
+  libelles:
+    fr: Gamme achetée le plus souvent
+    en: Range purchased most often
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Haut de gamme
+      en: High-end
+  - code: 2
+    libelles:
+      fr: Moyenne gamme
+      en: Mid-range
+  - code: 3
+    libelles:
+      fr: Bas de gamme
+      en: Low-end
+  - code: 4
+    libelles:
+      fr: Selon le projet
+      en: Depends on the project
+  longueur: 500
+- numero: 19
+  code: DEAVHAGA
+  section: S5
+  libelles:
+    fr: Pour vous, ce qui définit AVANT TOUT un produit HAUT DE GAMME
+    en: For you, what defines a HIGH-END product ABOVE ALL
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  aide:
+    fr: Une seule réponse.
+    en: One answer only.
+  modalites:
+  - code: 1
+    libelles:
+      fr: Un prix élevé
+      en: A high price
+  - code: 2
+    libelles:
+      fr: Une marque reconnue
+      en: A recognised brand
+  - code: 3
+    libelles:
+      fr: La durabilité / fiabilité
+      en: Durability / reliability
+  - code: 4
+    libelles:
+      fr: L'origine (Europe, Asie, etc.)
+      en: Origin (Europe, Asia, etc.)
+  - code: 5
+    libelles:
+      fr: Les certifications / conformité aux normes
+      en: Certifications / compliance with standards
+  - code: 6
+    libelles:
+      fr: Une garantie longue
+      en: A long warranty
+  longueur: 500
+- numero: 20
+  code: CAAVBAGA
+  section: S5
+  libelles:
+    fr: Pour vous, ce qui caractérise AVANT TOUT un produit BAS DE GAMME
+    en: For you, what characterises a LOW-END product ABOVE ALL
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  aide:
+    fr: Une seule réponse.
+    en: One answer only.
+  modalites:
+  - code: 1
+    libelles:
+      fr: Un prix bas
+      en: A low price
+  - code: 2
+    libelles:
+      fr: Une origine asiatique générique
+      en: A generic Asian origin
+  - code: 3
+    libelles:
+      fr: L'absence de marque connue
+      en: No well-known brand
+  - code: 4
+    libelles:
+      fr: Une durée de vie courte
+      en: A short lifespan
+  - code: 5
+    libelles:
+      fr: L'absence de garantie
+      en: No warranty
+  - code: 6
+    libelles:
+      fr: Un risque de non-conformité
+      en: A risk of non-compliance
+  longueur: 500
+- numero: 21
+  code: ORASHAGA
+  section: S5
+  libelles:
+    fr: À quelle origine associez-vous spontanément le HAUT DE GAMME ?
+    en: Which origin do you spontaneously associate with HIGH-END products?
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Europe
+      en: Europe
+  - code: 2
+    libelles:
+      fr: Asie
+      en: Asia
+  - code: 3
+    libelles:
+      fr: Amérique
+      en: America
+  - code: 98
+    libelles:
+      fr: Sans avis
+      en: No opinion
+  longueur: 500
+- numero: 22
+  code: ORASBAGA
+  section: S5
+  libelles:
+    fr: À quelle origine associez-vous spontanément le BAS DE GAMME ?
+    en: Which origin do you spontaneously associate with LOW-END products?
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Europe
+      en: Europe
+  - code: 2
+    libelles:
+      fr: Asie
+      en: Asia
+  - code: 3
+    libelles:
+      fr: Amérique
+      en: America
+  - code: 98
+    libelles:
+      fr: Sans avis
+      en: No opinion
+  longueur: 500
+- numero: 23
+  code: FOPRGAMM
+  section: S5
+  libelles:
+    fr: Pour un article courant (ex. disjoncteur), à quelle fourchette de prix associez-vous chaque gamme ?
+    en: For a common item (e.g. circuit breaker), which price bracket do you associate with each range?
+  type: grille
+  mesure: ORDINAL
+  obligatoire: true
+  aide:
+    fr: Cochez une case par ligne.
+    en: Tick one box per row.
+  modalites:
+  - code: 1
+    libelles:
+      fr: < 5 000 FCFA
+      en: < 5,000 FCFA
+  - code: 2
+    libelles:
+      fr: 5 000 – 15 000
+      en: 5,000 – 15,000
+  - code: 3
+    libelles:
+      fr: 15 000 – 40 000
+      en: 15,000 – 40,000
+  - code: 4
+    libelles:
+      fr: '> 40 000 FCFA'
+      en: '> 40,000 FCFA'
+  lignes:
+  - variable: PXHAUTGA
+    libelles:
+      fr: Haut de gamme
+      en: High-end
+  - variable: PXMOYEGA
+    libelles:
+      fr: Moyenne gamme
+      en: Mid-range
+  - variable: PXBASGAM
+    libelles:
+      fr: Bas de gamme
+      en: Low-end
+  longueur: 500
+- numero: 24
+  code: ECQUHABA
+  section: S5
+  libelles:
+    fr: Selon vous, l'écart de qualité entre le haut et le bas de gamme est
+    en: In your opinion, the quality gap between high-end and low-end products is
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Très important
+      en: Very large
+  - code: 2
+    libelles:
+      fr: Important
+      en: Large
+  - code: 3
+    libelles:
+      fr: Modéré
+      en: Moderate
+  - code: 4
+    libelles:
+      fr: Faible
+      en: Small
+  - code: 5
+    libelles:
+      fr: Inexistant
+      en: Non-existent
+  longueur: 500
+- numero: 25
+  code: PRIOPRIN
+  section: S5
+  libelles:
+    fr: Priorité principale
+    en: Main priority
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Le moins cher
+      en: The cheapest
+  - code: 2
+    libelles:
+      fr: Meilleur rapport qualité/prix
+      en: Best value for money
+  - code: 3
+    libelles:
+      fr: Meilleure qualité quel que soit le prix
+      en: Best quality whatever the price
+  longueur: 500
+- numero: 26
+  code: SUACMOGA
+  section: S5
+  libelles:
+    fr: Surcoût accepté pour monter en gamme
+    en: Extra cost accepted to move up a range
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Aucun
+      en: None
+  - code: 2
+    libelles:
+      fr: Jusqu'à +10 %
+      en: Up to +10%
+  - code: 3
+    libelles:
+      fr: +10–25 %
+      en: +10–25%
+  - code: 4
+    libelles:
+      fr: +25–50 %
+      en: +25–50%
+  - code: 5
+    libelles:
+      fr: '>+50 %'
+      en: '>+50%'
+  longueur: 500
+- numero: 27
+  code: PRINFREI
+  section: S6
+  libelles:
+    fr: Principal frein
+    en: Main barrier
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Prix élevé
+      en: High price
+  - code: 2
+    libelles:
+      fr: Doute qualité/contrefaçon
+      en: Doubt about quality/counterfeit
+  - code: 3
+    libelles:
+      fr: Indisponibilité
+      en: Unavailability
+  - code: 4
+    libelles:
+      fr: Manque de conseil
+      en: Lack of advice
+  - code: 5
+    libelles:
+      fr: Absence de garantie
+      en: No warranty
+  - code: 6
+    libelles:
+      fr: Délais de livraison
+      en: Delivery times
+  longueur: 500
+- numero: 28
+  code: CRACPRCO
+  section: S6
+  libelles:
+    fr: Crainte d'acheter un produit contrefait/non conforme
+    en: Fear of buying a counterfeit/non-compliant product
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Souvent
+      en: Often
+  - code: 2
+    libelles:
+      fr: Parfois
+      en: Sometimes
+  - code: 3
+    libelles:
+      fr: Rarement
+      en: Rarely
+  - code: 4
+    libelles:
+      fr: Jamais
+      en: Never
+  longueur: 500
+- numero: 29
+  code: DEJDECAC
+  section: S6
+  libelles:
+    fr: Déjà déçu par un achat
+    en: Already disappointed by a purchase
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Oui, plusieurs fois
+      en: Yes, several times
+  - code: 2
+    libelles:
+      fr: Oui, une fois
+      en: Yes, once
+  - code: 3
+    libelles:
+      fr: Non
+      en: 'No'
+  longueur: 500
+- numero: 30
+  code: IMSECSAV
+  section: S7
+  libelles:
+    fr: Importance du service client et du SAV
+    en: Importance of customer service and after-sales service
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Très importante
+      en: Very important
+  - code: 2
+    libelles:
+      fr: Importante
+      en: Important
+  - code: 3
+    libelles:
+      fr: Peu importante
+      en: Not very important
+  - code: 4
+    libelles:
+      fr: Pas importante
+      en: Not important
+  longueur: 500
+- numero: 31
+  code: SEATPRIO
+  section: S7
+  libelles:
+    fr: Service attendu en priorité
+    en: Service expected first
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Garantie/remplacement
+      en: Warranty/replacement
+  - code: 2
+    libelles:
+      fr: Conseil technique
+      en: Technical advice
+  - code: 3
+    libelles:
+      fr: Réparation/pièces
+      en: Repair/spare parts
+  - code: 4
+    libelles:
+      fr: Réactivité du contact
+      en: Responsiveness
+  - code: 5
+    libelles:
+      fr: Livraison/installation
+      en: Delivery/installation
+  longueur: 500
+- numero: 32
+  code: DUGAJUAC
+  section: S7
+  libelles:
+    fr: Durée de garantie jugée acceptable
+    en: Warranty period considered acceptable
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: <6 mois
+      en: <6 months
+  - code: 2
+    libelles:
+      fr: 6 mois–1 an
+      en: 6 months–1 year
+  - code: 3
+    libelles:
+      fr: 1–2 ans
+      en: 1–2 years
+  - code: 4
+    libelles:
+      fr: '>2 ans'
+      en: '>2 years'
+  longueur: 500
+- numero: 33
+  code: CACOPREF
+  section: S7
+  libelles:
+    fr: Canal de contact préféré
+    en: Preferred contact channel
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: En personne
+      en: In person
+  - code: 2
+    libelles:
+      fr: Téléphone
+      en: Phone
+  - code: 3
+    libelles:
+      fr: WhatsApp
+      en: WhatsApp
+  - code: 4
+    libelles:
+      fr: E-mail
+      en: E-mail
+  - code: 5
+    libelles:
+      fr: Réseaux sociaux
+      en: Social media
+  longueur: 500
+- numero: 34
+  code: BOSAPACH
+  section: S7
+  libelles:
+    fr: Un bon SAV/service vous ferait payer plus cher
+    en: Good after-sales service would make you pay more
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Oui
+      en: 'Yes'
+  - code: 2
+    libelles:
+      fr: Peut-être
+      en: Maybe
+  - code: 3
+    libelles:
+      fr: Non
+      en: 'No'
+  longueur: 500
+- numero: 35
+  code: CANAPREF
+  section: S8
+  libelles:
+    fr: Canal préféré
+    en: Preferred channel
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Quincaillerie
+      en: Hardware store
+  - code: 2
+    libelles:
+      fr: Grossiste spécialisé
+      en: Specialised wholesaler
+  - code: 3
+    libelles:
+      fr: Magasin spécialisé
+      en: Specialised shop
+  - code: 4
+    libelles:
+      fr: Marché
+      en: Market
+  - code: 5
+    libelles:
+      fr: Importateur
+      en: Importer
+  - code: 6
+    libelles:
+      fr: En ligne
+      en: Online
+  longueur: 500
+- numero: 36
+  code: CRCHCANA
+  section: S8
+  libelles:
+    fr: Critère de choix du canal
+    en: Criterion for choosing the channel
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Proximité
+      en: Proximity
+  - code: 2
+    libelles:
+      fr: Prix
+      en: Price
+  - code: 3
+    libelles:
+      fr: Largeur du choix
+      en: Breadth of choice
+  - code: 4
+    libelles:
+      fr: Disponibilité
+      en: Availability
+  - code: 5
+    libelles:
+      fr: Conseil
+      en: Advice
+  - code: 6
+    libelles:
+      fr: Confiance
+      en: Trust
+  longueur: 500
+- numero: 37
+  code: DEJACHLI
+  section: S8
+  libelles:
+    fr: Déjà acheté en ligne
+    en: Already bought online
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Oui
+      en: 'Yes'
+  - code: 2
+    libelles:
+      fr: Non
+      en: 'No'
+  longueur: 500
+- numero: 38
+  code: PRETACLI
+  section: S8
+  libelles:
+    fr: Prêt à acheter en ligne
+    en: Ready to buy online
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Oui
+      en: 'Yes'
+  - code: 2
+    libelles:
+      fr: Peut-être
+      en: Maybe
+  - code: 3
+    libelles:
+      fr: Non
+      en: 'No'
+  longueur: 500
+- numero: 39
+  code: PRFRACLI
+  section: S8
+  libelles:
+    fr: Principal frein à l'achat en ligne
+    en: Main barrier to buying online
+  type: choix_unique
+  mesure: NOMINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Qualité/conformité
+      en: Quality/compliance
+  - code: 2
+    libelles:
+      fr: Ne pas voir le produit
+      en: Not seeing the product
+  - code: 3
+    libelles:
+      fr: Confiance paiement
+      en: Payment security
+  - code: 4
+    libelles:
+      fr: Livraison
+      en: Delivery
+  - code: 5
+    libelles:
+      fr: Absence de SAV
+      en: No after-sales service
+  longueur: 500
+- numero: 40
+  code: FIMEFOUR
+  section: S9
+  libelles:
+    fr: Fidèle à un même fournisseur
+    en: Loyal to the same supplier
+  type: choix_unique
+  mesure: ORDINAL
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Toujours
+      en: Always
+  - code: 2
+    libelles:
+      fr: Souvent
+      en: Often
+  - code: 3
+    libelles:
+      fr: Parfois
+      en: Sometimes
+  - code: 4
+    libelles:
+      fr: Rarement
+      en: Rarely
+  - code: 5
+    libelles:
+      fr: Jamais
+      en: Never
+  longueur: 500
+- numero: 41
+  code: RENFFIDE
+  section: S9
+  libelles:
+    fr: Ce qui renforcerait votre fidélité
+    en: What would strengthen your loyalty
+  type: choix_multiple
+  obligatoire: true
+  modalites:
+  - code: 1
+    libelles:
+      fr: Prix/promotions
+      en: Prices/promotions
+    variable: RFIDPRIX
+  - code: 2
+    libelles:
+      fr: Qualité constante
+      en: Consistent quality
+    variable: RFIDQUAL
+  - code: 3
+    libelles:
+      fr: Disponibilité du stock
+      en: Stock availability
+    variable: RFIDSTOC
+  - code: 4
+    libelles:
+      fr: Bon conseil
+      en: Good advice
+    variable: RFIDCONS
+  - code: 5
+    libelles:
+      fr: SAV fiable
+      en: Reliable after-sales service
+    variable: RFIDSAVF
+  - code: 6
+    libelles:
+      fr: Programme de fidélité
+      en: Loyalty programme
+    variable: RFIDPROG
+  - code: 7
+    libelles:
+      fr: Facilités de paiement
+      en: Payment facilities
+    variable: RFIDPAIE
+  longueur: 500
+- numero: 42
+  code: SUGGATTE
+  section: S9
+  libelles:
+    fr: Une suggestion / attente (facultatif)
+    en: A suggestion / expectation (optional)
+  type: texte
+  obligatoire: false
+  longueur: 500
+regles_coherence:
+- code: INCOHERENCE_Q35_Q38
+  expression: CANAPREF == 6 and PRETACLI == 3
+  description:
+    fr: Canal préféré « En ligne » mais pas prêt à acheter en ligne
+- code: INCOHERENCE_Q7_Q37
+  expression: LIEACHPR == 6 and DEJACHLI == 2
+  description:
+    fr: Lieu d'achat principal « En ligne » mais n'a jamais acheté en ligne
+- code: INCOHERENCE_Q23
+  expression: PXHAUTGA < PXBASGAM
+  description:
+    fr: Prix associé au haut de gamme inférieur à celui du bas de gamme
+- code: INCOHERENCE_Q25_Q26
+  expression: PRIOPRIN == 3 and SUACMOGA == 1
+  description:
+    fr: Priorité « meilleure qualité quel que soit le prix » mais aucun surcoût accepté

@@ -1,0 +1,20 @@
+# Plan d'échantillonnage — EDM Équipements électriques Cameroun (2e source de vérité du projet).
+# Version 02 = cahier des charges 02, référence validée (décision D-002).
+# Source : EDM_ELECTRIQUE_TEMPS_REEL_V11.gs, constante QUOTAS (code Q1 -> [cible, Douala, Yaoundé, Bafoussam]).
+# La version 01 (PDF d'organisation, 600 fiches, 5 autres cibles) sera saisie en phase 6 (module M2).
+# Modèle et validation de ce fichier : phase 6. En phase 1, il n'est que lu par les tests de cohérence.
+etude: EDM_EQUIPEMENTS_ELECTRIQUES_CAMEROUN
+version: "02"
+methode: quotas            # échantillon non probabiliste : mention imposée dans le plan et le rapport
+variable_cible: VOUSETES
+quotas:                    # code Q1 : {DOUALA, YAOUNDE, BAFOUSSAM}
+  1: {cible: Particulier, DOUALA: 35, YAOUNDE: 35, BAFOUSSAM: 15}
+  2: {cible: "Entreprises (PME, Industries…)", DOUALA: 35, YAOUNDE: 35, BAFOUSSAM: 15}
+  3: {cible: Électricien/artisan, DOUALA: 40, YAOUNDE: 40, BAFOUSSAM: 20}
+  4: {cible: Entreprise BTP, DOUALA: 40, YAOUNDE: 40, BAFOUSSAM: 20}
+  5: {cible: Revendeur/Grossiste/Distributeur, DOUALA: 50, YAOUNDE: 50, BAFOUSSAM: 30}
+parametres_qualite:        # V11, CONFIG
+  objectif_jour: 25
+  nb_jours: 3
+  seuil_delai_min: 6
+  seuil_volume_jour: 30

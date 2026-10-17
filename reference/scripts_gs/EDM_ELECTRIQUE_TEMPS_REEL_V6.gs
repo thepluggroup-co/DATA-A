@@ -1,0 +1,1831 @@
+/**
+ * =====================================================================
+ *  EDM ELECTRIQUE CAMEROUN - MASQUE CODIFIE TEMPS REEL
+ *  Version 6 (06/10/2026) - SUIVI PAR JOUR (J1 / J2 / J3) + RAPPORT JOURNALIER
+ *  Formulaire : https://docs.google.com/forms/d/e/1FAIpQLSdEmfwEHV-E0wI1IcUgGthmc7pB9UaOnIjz0NyeCMX7bqEzhw/viewform
+ * =====================================================================
+ *
+ *  >>> MISE A JOUR (5 minutes, les enqueteurs continuent) <<<
+ *   1. Onglet PARAMETRES du classeur : verifier que DATE_J1, DATE_J2, DATE_J3 sont
+ *      les VRAIES dates du terrain (tous les tableaux par jour en dependent).
+ *   2. Projet Apps Script actuel : remplacer TOUT le code par ce fichier, enregistrer.
+ *   3. Executer la fonction « mettreAJourV6 » (une seule fois).
+ *   Ensuite, « rapportJournalier » peut etre relance a tout moment ; il se lance
+ *   aussi tout seul chaque soir a 19 h (heure de Douala).
+ *
+ *  NOUVEAUTES DE LA V6
+ *   - TABLEAU_DE_BORD : total general, rang des enqueteurs, recap par zone ET par jour,
+ *     graphique des fiches par enqueteur empilees J1 + J2 + J3.
+ *   - TRI_A_PLAT : pour chaque modalite, effectifs et % de J1, J2 et J3 a cote du total.
+ *   - SUIVI_CIBLES : cibles par ville et par jour ; enqueteur x cible pour chaque jour.
+ *     Les quotas modifies (cases jaunes) sont conserves quand l'onglet est recree.
+ *   - RECAP_JOURS (nouveau) : toutes les statistiques de J1 | J2 | J3 | cumul cote a cote,
+ *     en temps reel : production, qualite, villes, cibles, tendances cles.
+ *   - RAPPORT_J1, RAPPORT_J2, RAPPORT_J3 (nouveaux) : rapport redige de chaque jour —
+ *     synthese, recommandations pour le lendemain, classement des enqueteurs avec score
+ *     et appreciation, cibles, tendances comparees aux jours precedents, camemberts,
+ *     questions sautees, rythme horaire.
+ *   La synchronisation (V5), les 67 variables et les scripts SPSS ne changent pas.
+ *
+ *  PREMIERE INSTALLATION (script jamais installe sur ce formulaire)
+ *   Formulaire en mode edition > ⋮ > Editeur de scripts > coller > executer « installer »,
+ *   lire DIAGNOSTIC_FORMULAIRE, saisir noms et zones dans ENQUETEURS, executer « actualiser ».
+ *
+ *  FONCTIONS
+ *   - mettreAJourV6()       -> a lancer une fois apres avoir colle cette version
+ *   - rapportJournalier()   -> (re)genere les rapports RAPPORT_J1 / J2 / J3
+ *   - reparer()             -> en cas de doute sur la synchronisation + bilan SANTE_SYNC
+ *   - sante()               -> bilan de synchronisation seul (ne modifie rien)
+ *   - actualiser()          -> apres modification de l'onglet ENQUETEURS (zones, noms)
+ *   - reconstruireMasque()  -> recode toutes les reponses
+ *   - diagnostiquer()       -> compare le formulaire au dictionnaire
+ *   - exporterPourSPSS()    -> onglet EXPORT_SPSS, a telecharger en EXPORT_SPSS.csv
+ *
+ *  CONTROLE QUALITE : colonne STATUTQC = OK / A_VERIFIER (automatique) ; le superviseur
+ *  peut ecrire REJETE (fiche exclue du suivi, du tri a plat, des rapports et de l'export).
+ *  NE PAS trier ni inserer de lignes dans MASQUE_DEPOUILLEMENT.
+ */
+
+// =====================================================================
+// 1. PARAMETRES
+// =====================================================================
+const CONFIG = {
+  NOM_CLASSEUR: "EDM_ELECTRIQUE_CAMEROUN_MASQUE_TEMPS_REEL_V4",
+  FUSEAU: "Africa/Douala",
+  OBJECTIF_JOUR: 25,
+  NB_JOURS: 3,
+  SEUIL_DELAI_MIN: 6,
+  SEUIL_VOLUME_JOUR: 30,
+  CODE_NA: 97, CODE_NSP: 98, CODE_NR: 99,
+  PREMIERE_LIGNE_DONNEES: 4,
+  // Facultatif : URL d'EDITION du formulaire (…/forms/d/<ID>/edit) si le script n'est PAS
+  // ouvert depuis le formulaire. Le lien public (…/forms/d/e/…/viewform) ne convient pas.
+  FORM_URL_EDITION: ""
+};
+
+const ZONES = [
+  { code: 1, id: "DOUALA",    libelle: "Douala",    prefixe: "DLA" },
+  { code: 2, id: "YAOUNDE",   libelle: "Yaoundé",   prefixe: "YDE" },
+  { code: 3, id: "BAFOUSSAM", libelle: "Bafoussam", prefixe: "BAF" }
+];
+
+// Zones par defaut (plan de terrain initial). ENQ9 a ENQ11 : zone a saisir dans l'onglet ENQUETEURS.
+const ZONES_PAR_DEFAUT = { ENQ1: "DOUALA", ENQ2: "DOUALA", ENQ3: "DOUALA", ENQ4: "YAOUNDE", ENQ5: "YAOUNDE",
+                           ENQ6: "YAOUNDE", ENQ7: "BAFOUSSAM", ENQ8: "BAFOUSSAM" };
+
+// Quotas du cahier des charges 02 (code Q1 -> [cible, Douala, Yaounde, Bafoussam])
+const QUOTAS = {
+  1: ["Particulier", 35, 35, 15],
+  2: ["Entreprises (PME, Industries…)", 35, 35, 15],
+  3: ["Électricien/artisan", 40, 40, 20],
+  4: ["Entreprise BTP", 40, 40, 20],
+  5: ["Revendeur/Grossiste/Distributeur", 50, 50, 30]
+};
+
+// =====================================================================
+// 2. DICTIONNAIRE (identique a la V3 : memes codes, memes modalites)
+//    n = numero de la question dans le formulaire (« Qn. »)
+// =====================================================================
+const ITEMS = [
+  { n: 1, code: "VOUSETES", section: "1. Profil du répondant", q: "Q1. Vous êtes", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Particulier"], [2, "Entreprises (PME, Industries…)"], [3, "Électricien/artisan"], [4, "Entreprise BTP"], [5, "Revendeur/Grossiste/Distributeur"]],
+    alias: { "Revendeur/grossiste": 5 } },
+  { n: 2, code: "SEXMAFEM", section: "1. Profil du répondant", q: "Q2. Genre", type: "radio", mesure: "NOMINAL", choix: [[1, "Homme"], [2, "Femme"]] },
+  { n: 3, code: "AGEREPON", section: "1. Profil du répondant", q: "Q3. Âge", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "<25"], [2, "25–34"], [3, "35–44"], [4, "45–54"], [5, "55+"]] },
+  { n: 4, code: "VILLEREG", section: "1. Profil du répondant", q: "Q4. Ville / région", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Douala"], [2, "Yaoundé"], [3, "Bafoussam"]] },
+  { n: 5, code: "REVMENME", section: "1. Profil du répondant", q: "Q5. Revenu mensuel du ménage (FCFA)", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "<100k"], [2, "100k–250k"], [3, "250k–500k"], [4, "500k–1M"], [5, ">1M"], [98, "NSP"]] },
+  { n: 6, code: "FREQACHA", section: "2. Habitudes d'achat", q: "Q6. Fréquence d'achat", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Chaque semaine"], [2, "1–3×/mois"], [3, "Quelques fois/an"], [4, "Rarement"]] },
+  { n: 7, code: "LIEACHPR", section: "2. Habitudes d'achat", q: "Q7. Lieu d'achat principal", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Quincaillerie"], [2, "Grossiste spécialisé"], [3, "Magasin spécialisé"], [4, "Marché"], [5, "Importateur"], [6, "En ligne"]] },
+  { n: 8, code: "MONMOYAC", section: "2. Habitudes d'achat", q: "Q8. Montant moyen par achat (FCFA)", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "<25k"], [2, "25k–100k"], [3, "100k–500k"], [4, "500k–2M"], [5, ">2M"]] },
+  { n: 9, code: "PRODACHE", section: "2. Habitudes d'achat", q: "Q9. Produits achetés (plusieurs réponses)", type: "multi",
+    sousItems: [["PRACCABL", "Câbles/fils"], ["PRACAPPA", "Appareillage/disjoncteurs"], ["PRACPRIS", "Prises/interrupteurs"],
+                ["PRACLUMI", "Luminaires"], ["PRACSOLA", "Solaire/onduleurs"], ["PRACGROU", "Groupes électrogènes"]] },
+  { n: 10, code: "PAIEPRIV", section: "2. Habitudes d'achat", q: "Q10. Paiement privilégié", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Espèces"], [2, "Mobile Money"], [3, "Virement"], [4, "Crédit fournisseur"]] },
+  { n: 11, code: "IMPOMARQ", section: "3. Marques", q: "Q11. Importance de la marque", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Très importante"], [2, "Importante"], [3, "Peu importante"], [4, "Pas importante"]] },
+  { n: 12, code: "MAACPLSO", section: "3. Marques", q: "Q12. Marque achetée le plus souvent", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Schneider"], [2, "Legrand"], [3, "Vectron"], [4, "Hager"], [5, "ABB"], [6, "Siemens"], [7, "Chint/chinoise"],
+            [8, "Philips"], [9, "JA Solar"], [10, "Longi"], [11, "Growatt"]],
+    autre: { code: 12, libelle: "Autre", variable: "MAACAUTR" } },
+  { n: 13, code: "PRCRICHO", section: "3. Marques", q: "Q13. Principal critère de choix", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Prix"], [2, "Qualité/durabilité"], [3, "Disponibilité"], [4, "Notoriété"], [5, "Garantie/SAV"], [6, "Conformité normes"]] },
+  { n: 14, code: "ORIGPRIV", section: "4. Origine des produits", q: "Q14. Origine privilégiée", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Europe"], [2, "Asie"], [3, "Amérique"], [4, "Aucune préférence"]] },
+  { n: 15, code: "MEQUAFIA", section: "4. Origine des produits", q: "Q15. Meilleure qualité/fiabilité selon vous", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Europe"], [2, "Asie"], [3, "Amérique"], [98, "Sans avis"]] },
+  { n: 16, code: "MEILPRIX", section: "4. Origine des produits", q: "Q16. Meilleur prix selon vous", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Europe"], [2, "Asie"], [3, "Amérique"], [98, "Sans avis"]] },
+  { n: 17, code: "ORINFACH", section: "4. Origine des produits", q: "Q17. L'origine influence votre achat", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Fortement"], [2, "Modérément"], [3, "Faiblement"], [4, "Pas du tout"]] },
+  { n: 18, code: "GAACPLSO", section: "5. Gammes", q: "Q18. Gamme achetée le plus souvent", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Haut de gamme"], [2, "Moyenne gamme"], [3, "Bas de gamme"], [4, "Selon le projet"]] },
+  { n: 19, code: "DEAVHAGA", section: "5. Gammes", q: "Q19. Pour vous, ce qui définit AVANT TOUT un produit HAUT DE GAMME", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Un prix élevé"], [2, "Une marque reconnue"], [3, "La durabilité / fiabilité"], [4, "L'origine (Europe, Asie, etc.)"],
+            [5, "Les certifications / conformité aux normes"], [6, "Une garantie longue"]] },
+  { n: 20, code: "CAAVBAGA", section: "5. Gammes", q: "Q20. Pour vous, ce qui caractérise AVANT TOUT un produit BAS DE GAMME", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Un prix bas"], [2, "Une origine asiatique générique"], [3, "L'absence de marque connue"], [4, "Une durée de vie courte"],
+            [5, "L'absence de garantie"], [6, "Un risque de non-conformité"]] },
+  { n: 21, code: "ORASHAGA", section: "5. Gammes", q: "Q21. À quelle origine associez-vous spontanément le HAUT DE GAMME ?", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Europe"], [2, "Asie"], [3, "Amérique"], [98, "Sans avis"]] },
+  { n: 22, code: "ORASBAGA", section: "5. Gammes", q: "Q22. À quelle origine associez-vous spontanément le BAS DE GAMME ?", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Europe"], [2, "Asie"], [3, "Amérique"], [98, "Sans avis"]] },
+  { n: 23, code: "FOPRGAMM", section: "5. Gammes", q: "Q23. Pour un article courant (ex. disjoncteur), à quelle fourchette de prix associez-vous chaque gamme ?",
+    type: "grille", mesure: "ORDINAL",
+    lignes: [["PXHAUTGA", "Haut de gamme"], ["PXMOYEGA", "Moyenne gamme"], ["PXBASGAM", "Bas de gamme"]],
+    choix: [[1, "< 5 000 FCFA"], [2, "5 000 – 15 000"], [3, "15 000 – 40 000"], [4, "> 40 000 FCFA"]] },
+  { n: 24, code: "ECQUHABA", section: "5. Gammes", q: "Q24. Selon vous, l'écart de qualité entre le haut et le bas de gamme est", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Très important"], [2, "Important"], [3, "Modéré"], [4, "Faible"], [5, "Inexistant"]] },
+  { n: 25, code: "PRIOPRIN", section: "5. Gammes", q: "Q25. Priorité principale", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Le moins cher"], [2, "Meilleur rapport qualité/prix"], [3, "Meilleure qualité quel que soit le prix"]] },
+  { n: 26, code: "SUACMOGA", section: "5. Gammes", q: "Q26. Surcoût accepté pour monter en gamme", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Aucun"], [2, "Jusqu'à +10 %"], [3, "+10–25 %"], [4, "+25–50 %"], [5, ">+50 %"]] },
+  { n: 27, code: "PRINFREI", section: "6. Freins à l'achat", q: "Q27. Principal frein", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Prix élevé"], [2, "Doute qualité/contrefaçon"], [3, "Indisponibilité"], [4, "Manque de conseil"], [5, "Absence de garantie"], [6, "Délais de livraison"]] },
+  { n: 28, code: "CRACPRCO", section: "6. Freins à l'achat", q: "Q28. Crainte d'acheter un produit contrefait/non conforme", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Souvent"], [2, "Parfois"], [3, "Rarement"], [4, "Jamais"]] },
+  { n: 29, code: "DEJDECAC", section: "6. Freins à l'achat", q: "Q29. Déjà déçu par un achat", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Oui, plusieurs fois"], [2, "Oui, une fois"], [3, "Non"]] },
+  { n: 30, code: "IMSECSAV", section: "7. Service client & SAV", q: "Q30. Importance du service client et du SAV", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Très importante"], [2, "Importante"], [3, "Peu importante"], [4, "Pas importante"]] },
+  { n: 31, code: "SEATPRIO", section: "7. Service client & SAV", q: "Q31. Service attendu en priorité", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Garantie/remplacement"], [2, "Conseil technique"], [3, "Réparation/pièces"], [4, "Réactivité du contact"], [5, "Livraison/installation"]] },
+  { n: 32, code: "DUGAJUAC", section: "7. Service client & SAV", q: "Q32. Durée de garantie jugée acceptable", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "<6 mois"], [2, "6 mois–1 an"], [3, "1–2 ans"], [4, ">2 ans"]] },
+  { n: 33, code: "CACOPREF", section: "7. Service client & SAV", q: "Q33. Canal de contact préféré", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "En personne"], [2, "Téléphone"], [3, "WhatsApp"], [4, "E-mail"], [5, "Réseaux sociaux"]] },
+  { n: 34, code: "BOSAPACH", section: "7. Service client & SAV", q: "Q34. Un bon SAV/service vous ferait payer plus cher", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Oui"], [2, "Peut-être"], [3, "Non"]] },
+  { n: 35, code: "CANAPREF", section: "8. Canaux & achat en ligne", q: "Q35. Canal préféré", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Quincaillerie"], [2, "Grossiste spécialisé"], [3, "Magasin spécialisé"], [4, "Marché"], [5, "Importateur"], [6, "En ligne"]] },
+  { n: 36, code: "CRCHCANA", section: "8. Canaux & achat en ligne", q: "Q36. Critère de choix du canal", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Proximité"], [2, "Prix"], [3, "Largeur du choix"], [4, "Disponibilité"], [5, "Conseil"], [6, "Confiance"]] },
+  { n: 37, code: "DEJACHLI", section: "8. Canaux & achat en ligne", q: "Q37. Déjà acheté en ligne", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Oui"], [2, "Non"]] },
+  { n: 38, code: "PRETACLI", section: "8. Canaux & achat en ligne", q: "Q38. Prêt à acheter en ligne", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Oui"], [2, "Peut-être"], [3, "Non"]] },
+  { n: 39, code: "PRFRACLI", section: "8. Canaux & achat en ligne", q: "Q39. Principal frein à l'achat en ligne", type: "radio", mesure: "NOMINAL",
+    choix: [[1, "Qualité/conformité"], [2, "Ne pas voir le produit"], [3, "Confiance paiement"], [4, "Livraison"], [5, "Absence de SAV"]] },
+  { n: 40, code: "FIMEFOUR", section: "9. Fidélisation", q: "Q40. Fidèle à un même fournisseur", type: "radio", mesure: "ORDINAL",
+    choix: [[1, "Toujours"], [2, "Souvent"], [3, "Parfois"], [4, "Rarement"], [5, "Jamais"]] },
+  { n: 41, code: "RENFFIDE", section: "9. Fidélisation", q: "Q41. Ce qui renforcerait votre fidélité (plusieurs réponses)", type: "multi",
+    sousItems: [["RFIDPRIX", "Prix/promotions"], ["RFIDQUAL", "Qualité constante"], ["RFIDSTOC", "Disponibilité du stock"],
+                ["RFIDCONS", "Bon conseil"], ["RFIDSAVF", "SAV fiable"], ["RFIDPROG", "Programme de fidélité"], ["RFIDPAIE", "Facilités de paiement"]] },
+  { n: 42, code: "SUGGATTE", section: "9. Fidélisation", q: "Q42. Une suggestion / attente (facultatif)", type: "text" }
+];
+
+// Questions d'identification (reperees par mots-cles du titre, sans accents)
+const IDENT = [
+  { champ: "enq",      cles: ["identifiantenqueteur"],          titre: "Identifiant enquêteur" },
+  { champ: "accord",   cles: ["recontacte"],                    titre: "L'enquêté accepte d'être recontacté à des fins commerciales" },
+  { champ: "site",     cles: ["siteprecis"],                    titre: "Site précis / repère" },
+  { champ: "quartier", cles: ["quartier"],                      titre: "Quartier / zone" },
+  { champ: "tel",      cles: ["telephone"],                     titre: "Téléphone de l'enquêté" },
+  { champ: "mail",     cles: ["email", "mail"],                 titre: "E-mail de l'enquêté" },
+  { champ: "nom",      cles: ["nomdelenquete", "raisonsociale"], titre: "Nom de l'enquêté ou raison sociale" }
+];
+
+const VARS_ADMIN = [
+  { code: "NUMFICHE", label: "N° de fiche", spss: "A20" },
+  { code: "CODEENQU", label: "Identifiant enquêteur", spss: "A6" },
+  { code: "CODEZONE", label: "Zone d'étude", spss: "F2.0", mesure: "NOMINAL",
+    valeurs: ZONES.map(function (z) { return [z.code, z.libelle]; }).concat([[99, "Enquêteur inconnu"]]) },
+  { code: "QUARTIER", label: "Quartier / zone", spss: "A60" },
+  { code: "SITEENQU", label: "Site précis / repère", spss: "A80" },
+  { code: "DATEENQU", label: "Date de l'enquête", spss: "SDATE10" },
+  { code: "HEUREENQ", label: "Heure de soumission", spss: "A5" },
+  { code: "DELAIPRE", label: "Minutes depuis la fiche précédente du même enquêteur", spss: "F4.0", mesure: "SCALE" },
+  { code: "ACCRECON", label: "Accepte d'être recontacté à des fins commerciales", spss: "F2.0", mesure: "NOMINAL",
+    valeurs: [[1, "Oui"], [2, "Non"], [99, "Non-réponse"]] }
+];
+const VARS_CONTROLE = [
+  { code: "ANOMALIE", label: "Anomalies détectées automatiquement", spss: "A200" },
+  { code: "STATUTQC", label: "Statut contrôle qualité", spss: "A10" }
+];
+const ENTETE_CONTACTS = ["N° FICHE", "DATE", "HEURE", "ENQUÊTEUR", "VILLE", "QUARTIER / ZONE", "SITE PRÉCIS",
+  "NOM / RAISON SOCIALE", "PROFIL (Q1)", "TÉLÉPHONE", "E-MAIL", "ACCORD RECONTACT",
+  "PRODUITS ACHETÉS (Q9)", "MARQUE PRINCIPALE (Q12)", "MONTANT MOYEN (Q8)", "CANAL DE CONTACT PRÉFÉRÉ (Q33)", "STATUT QC"];
+
+// =====================================================================
+// 3. FONCTIONS PURES (aucun service Google) : lecture, codification
+// =====================================================================
+function norm_(s) {
+  return String(s === null || s === undefined ? "" : s).normalize("NFC").replace(/\s+/g, " ").trim();
+}
+/** Cle de comparaison : sans accents, minuscules, uniquement lettres, chiffres et < > + % */
+function cle_(s) {
+  return norm_(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/×/g, "x").replace(/[^a-z0-9<>+%]/g, "");
+}
+function vide_(r) {
+  if (r === null || r === undefined) return true;
+  if (Array.isArray(r)) return r.every(function (x) { return vide_(x); });
+  return norm_(r) === "";
+}
+/** Numero de question d'un titre « Q12. … » (null sinon) */
+function numeroQuestion_(titre) {
+  const m = norm_(titre).match(/^Q\s*(\d{1,2})\s*[.:)\-–]/i);
+  return m ? Number(m[1]) : null;
+}
+function champIdent_(titre) {
+  const k = cle_(titre);
+  for (let i = 0; i < IDENT.length; i++) {
+    if (IDENT[i].cles.some(function (c) { return k.indexOf(c) >= 0; })) return IDENT[i].champ;
+  }
+  return null;
+}
+function itemParCode_(code) { return ITEMS.filter(function (x) { return x.code === code; })[0]; }
+
+/**
+ * Transforme une liste de reponses [{titre, rep, lignes}] en {id:{…}, q:{n:{rep, lignes}}}.
+ * (lignes = libelles des lignes d'une grille, dans l'ordre du formulaire)
+ */
+function structurer_(liste) {
+  const out = { id: {}, q: {} };
+  liste.forEach(function (x) {
+    const n = numeroQuestion_(x.titre);
+    if (n) { if (!(n in out.q)) out.q[n] = { rep: x.rep, lignes: x.lignes || null }; return; }
+    const c = champIdent_(x.titre);
+    if (c && !(c in out.id)) out.id[c] = x.rep;
+  });
+  return out;
+}
+
+function chercherCode_(choix, rep) {
+  const k = cle_(rep);
+  const t = choix.filter(function (c) { return cle_(c[1]) === k; })[0];
+  return t ? t[0] : null;
+}
+
+/** Codifie une fiche structuree. @return {{valeurs:Object, anomalies:string[]}} */
+function coderFiche_(lu) {
+  const NR = CONFIG.CODE_NR, valeurs = {}, anomalies = [];
+  ITEMS.forEach(function (it) {
+    const src = lu.q[it.n];
+    const brut = src ? src.rep : null;
+    const absent = vide_(brut);
+    if (it.type === "radio") {
+      if (it.autre) valeurs[it.autre.variable] = "";
+      if (absent) { valeurs[it.code] = NR; return; }
+      const r = norm_(Array.isArray(brut) ? brut[0] : brut);
+      let code = chercherCode_(it.choix, r);
+      if (code === null && it.alias) {
+        const a = Object.keys(it.alias).filter(function (x) { return cle_(x) === cle_(r); })[0];
+        if (a) code = it.alias[a];
+      }
+      if (code !== null) { valeurs[it.code] = code; return; }
+      if (it.autre) { valeurs[it.code] = it.autre.code; valeurs[it.autre.variable] = r; return; }
+      valeurs[it.code] = NR; anomalies.push("CODE_INCONNU:" + it.code);
+    } else if (it.type === "multi") {
+      if (absent) { it.sousItems.forEach(function (s) { valeurs[s[0]] = NR; }); return; }
+      const coches = (Array.isArray(brut) ? brut : [brut]).map(cle_);
+      it.sousItems.forEach(function (s) { valeurs[s[0]] = coches.indexOf(cle_(s[1])) >= 0 ? 1 : 0; });
+      const connus = it.sousItems.map(function (s) { return cle_(s[1]); });
+      if (coches.some(function (c) { return c && connus.indexOf(c) < 0; })) anomalies.push("CODE_INCONNU:" + it.code);
+    } else if (it.type === "grille") {
+      const rep = absent ? [] : (Array.isArray(brut) ? brut : [brut]);
+      const lignesForm = src && src.lignes ? src.lignes.map(cle_) : null;
+      it.lignes.forEach(function (li, k) {
+        const idx = lignesForm ? lignesForm.indexOf(cle_(li[1])) : k;
+        const r = idx >= 0 ? rep[idx] : null;
+        if (vide_(r)) { valeurs[li[0]] = NR; return; }
+        const code = chercherCode_(it.choix, r);
+        if (code !== null) valeurs[li[0]] = code;
+        else { valeurs[li[0]] = NR; anomalies.push("CODE_INCONNU:" + li[0]); }
+      });
+    } else {
+      valeurs[it.code] = absent ? "" : norm_(brut);
+    }
+  });
+  // Coherences (memes regles qu'en V3 ; ignorees si une des deux reponses manque)
+  const ok = function (x) { return typeof x === "number" && x < 97; };
+  if (valeurs.CANAPREF === 6 && valeurs.PRETACLI === 3) anomalies.push("INCOHERENCE_Q35_Q38");
+  if (valeurs.LIEACHPR === 6 && valeurs.DEJACHLI === 2) anomalies.push("INCOHERENCE_Q7_Q37");
+  if (ok(valeurs.PXHAUTGA) && ok(valeurs.PXBASGAM) && valeurs.PXHAUTGA < valeurs.PXBASGAM) anomalies.push("INCOHERENCE_Q23");
+  if (valeurs.PRIOPRIN === 3 && valeurs.SUACMOGA === 1) anomalies.push("INCOHERENCE_Q25_Q26");
+  return { valeurs: valeurs, anomalies: anomalies };
+}
+
+/** Colonnes du masque (ordre = SPSS) : [{section, code, label, spss, mesure, valeurs, groupe}] */
+function colonnesMasque_() {
+  const NR = CONFIG.CODE_NR, cols = [];
+  VARS_ADMIN.forEach(function (v) { cols.push(Object.assign({ section: "Administratif" }, v)); });
+  ITEMS.forEach(function (it) {
+    if (it.type === "radio") {
+      const v = it.choix.slice();
+      if (it.autre) v.push([it.autre.code, it.autre.libelle]);
+      v.push([NR, "Non-réponse"]);
+      cols.push({ section: it.section, code: it.code, label: it.q, spss: "F2.0", mesure: it.mesure, valeurs: v });
+      if (it.autre) cols.push({ section: it.section, code: it.autre.variable, label: it.q + " - Autre (précisez)", spss: "A80" });
+    } else if (it.type === "multi") {
+      it.sousItems.forEach(function (s) {
+        cols.push({ section: it.section, code: s[0], label: it.q.replace(/\s*\(plusieurs réponses\)/, "") + " - " + s[1], spss: "F2.0",
+          mesure: "NOMINAL", valeurs: [[1, "Cité"], [0, "Non cité"], [NR, "Non-réponse"]], groupe: it.code });
+      });
+    } else if (it.type === "grille") {
+      it.lignes.forEach(function (li) {
+        cols.push({ section: it.section, code: li[0], label: it.q.replace(/\s*\?$/, "") + " - " + li[1], spss: "F2.0",
+          mesure: it.mesure, valeurs: it.choix.concat([[NR, "Non-réponse"]]) });
+      });
+    } else cols.push({ section: it.section, code: it.code, label: it.q, spss: "A500" });
+  });
+  VARS_CONTROLE.forEach(function (v) { cols.push(Object.assign({ section: "Contrôle qualité" }, v)); });
+  return cols;
+}
+
+/**
+ * Construit la ligne du masque + la ligne contact.
+ * fiche = {lu, horodatage:Date, enqueteurs:{ENQ1:"DOUALA" ou ""}, seuilDelai, telsVus:{}}
+ * etat  = {seq:{}, dernier:{}} (modifie) ; fmt(date, format) -> texte (fuseau Douala)
+ */
+function construireLigne_(fiche, etat, fmt) {
+  const code = coderFiche_(fiche.lu), v = code.valeurs, anomalies = code.anomalies.slice();
+  const id = fiche.lu.id, txt = function (x) { return Array.isArray(x) ? x.filter(function (y) { return y; }).join(", ") : norm_(x); };
+  const enq = txt(id.enq).toUpperCase();
+
+  let zone = null;
+  if (!(enq in fiche.enqueteurs)) anomalies.push("ENQUETEUR_INCONNU");
+  else {
+    zone = ZONES.filter(function (z) { return z.id === fiche.enqueteurs[enq]; })[0] || null;
+    if (!zone) {                                                   // enqueteur connu mais zone non saisie
+      zone = ZONES.filter(function (z) { return z.code === v.VILLEREG; })[0] || null;
+      anomalies.push("ZONE_ENQ_NON_PARAMETREE");
+    }
+  }
+  const seq = fiche.seqForce > 0 ? fiche.seqForce : (etat.seq[enq] || 0) + 1;      // seqForce : N° deja attribue, conserve
+  etat.seq[enq] = Math.max(etat.seq[enq] || 0, seq);
+  v.NUMFICHE = (zone ? zone.prefixe : "XXX") + "-" + (enq || "SANSID") + "-" + String(seq).padStart(3, "0");
+  v.CODEENQU = enq;
+  v.CODEZONE = zone ? zone.code : CONFIG.CODE_NR;
+  v.QUARTIER = txt(id.quartier);
+  v.SITEENQU = txt(id.site);
+  const accord = txt(id.accord);
+  v.ACCRECON = cle_(accord) === "oui" ? 1 : (cle_(accord) === "non" ? 2 : CONFIG.CODE_NR);
+
+  const tel = txt(id.tel), telCle = tel.replace(/\D/g, "").replace(/^237/, "");
+  if (telCle && fiche.telsVus) {
+    if (fiche.telsVus[telCle]) anomalies.push("TEL_DOUBLON");
+    fiche.telsVus[telCle] = true;
+  }
+  const jour = fmt(fiche.horodatage, "yyyy-MM-dd");
+  v.DATEENQU = jour;
+  v.HEUREENQ = fmt(fiche.horodatage, "HH:mm");
+  v.DELAIPRE = "";
+  const prec = etat.dernier[enq];
+  if (prec && fmt(new Date(prec), "yyyy-MM-dd") === jour) {
+    v.DELAIPRE = Math.round((fiche.horodatage.getTime() - prec) / 60000);
+    if (v.DELAIPRE < 0) v.DELAIPRE = "";                       // fiche rattrapee hors ordre chronologique
+    else if (v.DELAIPRE < fiche.seuilDelai) anomalies.push("DELAI_COURT");
+  }
+  etat.dernier[enq] = Math.max(prec || 0, fiche.horodatage.getTime());
+  if (zone && v.VILLEREG !== CONFIG.CODE_NR && v.VILLEREG !== zone.code) anomalies.push("VILLE_DIFFERENTE_ZONE");
+
+  v.ANOMALIE = anomalies.join(" | ");
+  v.STATUTQC = anomalies.length ? "A_VERIFIER" : "OK";
+
+  const q = fiche.lu.q, r = function (n) { return q[n] ? txt(q[n].rep) : ""; };
+  fiche.contact = [v.NUMFICHE, jour, v.HEUREENQ, enq, zone ? zone.libelle : "", v.QUARTIER, v.SITEENQU,
+    txt(id.nom), r(1), tel, txt(id.mail), accord || "NR", r(9), r(12), r(8), r(33), v.STATUTQC];
+
+  return colonnesMasque_().map(function (c) { return (c.code in v) ? v[c.code] : ""; });
+}
+
+function lettreColonne_(n) {
+  let s = "";
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+// =====================================================================
+// 4. ACCES AU FORMULAIRE ET AU CLASSEUR
+// =====================================================================
+function formulaire_() {
+  let f = null;
+  try { f = FormApp.getActiveForm(); } catch (e) { f = null; }
+  if (!f && CONFIG.FORM_URL_EDITION) f = FormApp.openByUrl(CONFIG.FORM_URL_EDITION);
+  if (!f) {
+    const id = PropertiesService.getScriptProperties().getProperty("FORM_ID");
+    if (id) f = FormApp.openById(id);
+  }
+  if (!f) throw new Error("Formulaire introuvable : ouvrez ce script depuis le formulaire (⋮ > Éditeur de scripts) " +
+    "ou renseignez CONFIG.FORM_URL_EDITION (lien …/edit, pas le lien public).");
+  return f;
+}
+
+function classeur_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty("SHEET_ID");
+  if (id) return SpreadsheetApp.openById(id);
+  const form = formulaire_();
+  let ss = null;
+  try { if (form.getDestinationId()) ss = SpreadsheetApp.openById(form.getDestinationId()); } catch (e) { ss = null; }
+  if (!ss) {
+    ss = SpreadsheetApp.create(CONFIG.NOM_CLASSEUR);
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+  }
+  ss.setSpreadsheetTimeZone(CONFIG.FUSEAU);
+  props.setProperties({ SHEET_ID: ss.getId(), FORM_ID: form.getId() });
+  return ss;
+}
+
+const LIGNES_GRILLE_ = {};                 // libelles des lignes de grille, lus une seule fois par execution
+function reponseEnListe_(formResponse) {
+  return formResponse.getItemResponses().map(function (r) {
+    const it = r.getItem(), titre = it.getTitle(), rep = r.getResponse();
+    let lignes = null;
+    if (Array.isArray(rep) && numeroQuestion_(titre) === 23) {
+      if (!(titre in LIGNES_GRILLE_)) LIGNES_GRILLE_[titre] = it.getType() === FormApp.ItemType.GRID ? it.asGridItem().getRows() : null;
+      lignes = LIGNES_GRILLE_[titre];
+    }
+    return { titre: titre, rep: rep, lignes: lignes };
+  });
+}
+
+function lireEnqueteurs_(ss) {
+  const sh = ss.getSheetByName("ENQUETEURS"), map = {};
+  if (!sh || sh.getLastRow() < 2) return map;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().forEach(function (l) {
+    if (norm_(l[0])) map[norm_(l[0]).toUpperCase()] = norm_(l[2]).toUpperCase();
+  });
+  return map;
+}
+
+function fmtDouala_(d, f) { return Utilities.formatDate(d, CONFIG.FUSEAU, f); }
+
+function styleEntete_(range) {
+  range.setFontWeight("bold").setBackground("#1F4E78").setFontColor("#FFFFFF").setVerticalAlignment("middle");
+}
+
+function refMasque_(code) {
+  const i = colonnesMasque_().map(function (c) { return c.code; }).indexOf(code) + 1;
+  const L = lettreColonne_(i);
+  return "MASQUE_DEPOUILLEMENT!$" + L + "$" + CONFIG.PREMIERE_LIGNE_DONNEES + ":$" + L;
+}
+
+function supprimerOnglet_(ss, s) {
+  if (!s) return;
+  const autre = ss.getSheets().filter(function (x) { return x.getSheetId() !== s.getSheetId(); })[0];
+  if (!autre) return;
+  try { ss.setActiveSheet(autre); } catch (e) { /* rien */ }
+  ss.deleteSheet(s);
+  SpreadsheetApp.flush();
+}
+
+function ongletNeuf_(ss, nom) {
+  supprimerOnglet_(ss, ss.getSheetByName(nom));
+  return ss.insertSheet(nom, ss.getSheets().length);
+}
+
+// =====================================================================
+// 5. INSTALLATION
+// =====================================================================
+function installer() {
+  if (Session.getScriptTimeZone() !== CONFIG.FUSEAU) {
+    Logger.log("ATTENTION : fuseau du projet = " + Session.getScriptTimeZone() + ". Réglez-le sur " + CONFIG.FUSEAU + " (Paramètres du projet).");
+  }
+  const form = formulaire_();
+  const ss = classeur_();
+
+  creerParametres_(ss);
+  creerEnqueteurs_(ss, form);
+  creerMasque_(ss);
+  feuilleContacts_(ss);
+  creerDictionnaire_(ss);
+  const diag = diagnostiquer();
+
+  installerDeclencheurs_(form);         // a la soumission + filet de securite (10 min)
+  synchroniser_("INSTALLER", null, true, true);   // reprend les reponses deja recues
+  creerTableauDeBord_(ss);
+  creerTriAPlat_(ss);
+  creerSuiviCibles_(ss);
+  creerRecapJours_(ss);
+  ss.getSheets().forEach(function (s) {
+    if (/^(Feuille|Sheet)\s?1$/.test(s.getName()) && s.getLastRow() === 0) supprimerOnglet_(ss, s);
+  });
+  ss.setActiveSheet(ss.getSheetByName("TABLEAU_DE_BORD")); ss.moveActiveSheet(1);
+
+  Logger.log("Formulaire (édition) : " + form.getEditUrl());
+  Logger.log("Formulaire (public)  : " + form.getPublishedUrl());
+  Logger.log("Classeur             : " + ss.getUrl());
+  Logger.log("Diagnostic           : " + diag);
+  Logger.log("Synchronisation      : " + sante());
+  Logger.log("ÉTAPE SUIVANTE : onglet ENQUETEURS (noms + zones de ENQ9 à ENQ11), puis exécuter actualiser().");
+}
+
+/** A relancer apres toute modification de l'onglet ENQUETEURS (zones, noms, ajout). */
+function actualiser() {
+  const ss = classeur_(), form = formulaire_();
+  creerEnqueteurs_(ss, form);           // conserve noms et zones, regenere les liens
+  synchroniser_("ACTUALISER", null, true, true);   // la zone de l'enqueteur fixe CODEZONE et le prefixe du N° de fiche
+  creerTableauDeBord_(ss);
+  creerTriAPlat_(ss);
+  creerSuiviCibles_(ss);
+  creerRecapJours_(ss);
+  Logger.log("Actualisé : " + ss.getUrl());
+}
+
+function creerParametres_(ss) {
+  let sh = ss.getSheetByName("PARAMETRES");
+  if (sh && sh.getRange("A1").getValue() === "PARAMETRE") return sh;      // ne jamais ecraser les dates saisies
+  sh = ongletNeuf_(ss, "PARAMETRES");
+  const lignes = [
+    ["PARAMETRE", "VALEUR", "DESCRIPTION"],
+    ["DATE_J1", "", "Date du 1er jour de terrain (ex. 05/10/2026)"],
+    ["DATE_J2", "", "Date du 2e jour de terrain"],
+    ["DATE_J3", "", "Date du 3e jour de terrain"],
+    ["OBJECTIF_JOUR", CONFIG.OBJECTIF_JOUR, "Fiches attendues par enquêteur et par jour"],
+    ["NB_JOURS", CONFIG.NB_JOURS, "Nombre de jours de terrain"],
+    ["SEUIL_DELAI_MIN", CONFIG.SEUIL_DELAI_MIN, "Alerte si moins de X minutes entre 2 fiches d'un même enquêteur"],
+    ["SEUIL_VOLUME_JOUR", CONFIG.SEUIL_VOLUME_JOUR, "Alerte « volume suspect » au-delà de X fiches/jour pour un enquêteur"]
+  ];
+  sh.getRange(1, 1, lignes.length, 3).setValues(lignes);
+  styleEntete_(sh.getRange(1, 1, 1, 3));
+  sh.getRange("B2:B4").setNumberFormat("dd/MM/yyyy").setBackground("#FFF2CC");
+  sh.getRange("B5:B8").setBackground("#FFF2CC");
+  const noms = { P_J1: "B2", P_J2: "B3", P_J3: "B4", P_OBJ_JOUR: "B5", P_NB_JOURS: "B6", P_SEUIL_DELAI: "B7", P_SEUIL_VOLUME: "B8" };
+  Object.keys(noms).forEach(function (n) { ss.setNamedRange(n, sh.getRange(noms[n])); });
+  sh.setColumnWidth(1, 170); sh.setColumnWidth(2, 110); sh.setColumnWidth(3, 480);
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+/** Liste des enqueteurs = choix de la liste deroulante du formulaire (+ ceux deja dans l'onglet). */
+function creerEnqueteurs_(ss, form) {
+  const items = form.getItems();
+  const itemEnq = items.filter(function (x) { return !numeroQuestion_(x.getTitle()) && champIdent_(x.getTitle()) === "enq"; })[0];
+  if (!itemEnq) throw new Error("Question « Identifiant enquêteur » introuvable dans le formulaire.");
+  const T = FormApp.ItemType;
+  let ids = [];
+  if (itemEnq.getType() === T.LIST) ids = itemEnq.asListItem().getChoices().map(function (c) { return c.getValue(); });
+  else if (itemEnq.getType() === T.MULTIPLE_CHOICE) ids = itemEnq.asMultipleChoiceItem().getChoices().map(function (c) { return c.getValue(); });
+  ids = ids.map(function (x) { return norm_(x).toUpperCase(); }).filter(function (x) { return x; });
+
+  // Conserver noms et zones deja saisis
+  const avant = {};
+  const old = ss.getSheetByName("ENQUETEURS");
+  if (old && old.getLastRow() > 1) old.getRange(2, 1, old.getLastRow() - 1, 3).getValues().forEach(function (l) {
+    if (norm_(l[0])) avant[norm_(l[0]).toUpperCase()] = { nom: l[1], zone: norm_(l[2]).toUpperCase() };
+  });
+  Object.keys(avant).forEach(function (k) { if (ids.indexOf(k) < 0) ids.push(k); });
+
+  const itemVille = items.filter(function (x) { return numeroQuestion_(x.getTitle()) === 4; })[0];
+  const lignes = [["ENQ_ID", "NOM_ENQUETEUR", "ZONE", "OBJECTIF_TOTAL", "LIEN_PERSONNEL", "DANS LE FORMULAIRE"]];
+  ids.forEach(function (e) {
+    const zid = avant[e] ? avant[e].zone : (ZONES_PAR_DEFAUT[e] || "");
+    const zone = ZONES.filter(function (z) { return z.id === zid; })[0];
+    let url = "";
+    const dansForm = itemEnq.getType() === T.LIST
+      ? itemEnq.asListItem().getChoices().some(function (c) { return norm_(c.getValue()).toUpperCase() === e; })
+      : itemEnq.asMultipleChoiceItem().getChoices().some(function (c) { return norm_(c.getValue()).toUpperCase() === e; });
+    if (dansForm) {
+      const valEnq = (itemEnq.getType() === T.LIST ? itemEnq.asListItem() : itemEnq.asMultipleChoiceItem()).getChoices()
+        .map(function (c) { return c.getValue(); }).filter(function (v) { return norm_(v).toUpperCase() === e; })[0];
+      let resp = form.createResponse().withItemResponse(
+        (itemEnq.getType() === T.LIST ? itemEnq.asListItem() : itemEnq.asMultipleChoiceItem()).createResponse(valEnq));
+      if (zone && itemVille && itemVille.getType() === T.MULTIPLE_CHOICE) {
+        const mc = itemVille.asMultipleChoiceItem();
+        const v = mc.getChoices().map(function (c) { return c.getValue(); }).filter(function (x) { return cle_(x) === cle_(zone.libelle); })[0];
+        if (v) resp = resp.withItemResponse(mc.createResponse(v));
+      }
+      url = resp.toPrefilledUrl();
+    }
+    lignes.push([e, avant[e] ? avant[e].nom : "", zid, "=P_OBJ_JOUR*P_NB_JOURS", url, dansForm ? "Oui" : "NON : absent de la liste du formulaire"]);
+  });
+  // Onglet vide puis reecrit (jamais supprime : d'autres onglets y font reference)
+  let sh = ss.getSheetByName("ENQUETEURS");
+  if (sh) { sh.clear(); sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearDataValidations(); sh.clearConditionalFormatRules(); }
+  else sh = ss.insertSheet("ENQUETEURS", ss.getSheets().length);
+  if (sh.getMaxColumns() < 6) sh.insertColumnsAfter(sh.getMaxColumns(), 6 - sh.getMaxColumns());
+  sh.getRange(1, 1, lignes.length, 6).setValues(lignes);
+  styleEntete_(sh.getRange(1, 1, 1, 6));
+  sh.getRange(2, 2, ids.length, 2).setBackground("#FFF2CC");
+  sh.getRange(2, 3, ids.length, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(ZONES.map(function (z) { return z.id; }), true).build());
+  sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule().whenCellEmpty()
+    .setBackground("#F4CCCC").setRanges([sh.getRange(2, 3, ids.length, 1)]).build()]);
+  sh.setColumnWidth(2, 200); sh.setColumnWidth(5, 420); sh.setColumnWidth(6, 260);
+  sh.setFrozenRows(1);
+  sh.getRange(ids.length + 3, 1).setValue("Case ZONE en rouge = à saisir, puis exécuter actualiser() : sans zone, la fiche prend la ville de Q4 et est marquée ZONE_ENQ_NON_PARAMETREE.")
+    .setFontStyle("italic").setFontColor("#666666");
+  return sh;
+}
+
+function creerMasque_(ss) {
+  let sh = ss.getSheetByName("MASQUE_DEPOUILLEMENT");
+  if (!sh) sh = ss.insertSheet("MASQUE_DEPOUILLEMENT", ss.getSheets().length);
+  const cols = colonnesMasque_();
+  if (sh.getMaxColumns() < cols.length) sh.insertColumnsAfter(sh.getMaxColumns(), cols.length - sh.getMaxColumns());
+  const ent = sh.getRange(1, 1, 3, sh.getMaxColumns());
+  ent.breakApart(); ent.clear();
+  const couleurs = ["#D9E1F2", "#E2EFDA"];
+  let c = 1, k = 0;
+  while (c <= cols.length) {
+    const lib = cols[c - 1].section, debut = c;
+    while (c <= cols.length && cols[c - 1].section === lib) c++;
+    const r = sh.getRange(1, debut, 1, c - debut);
+    if (c - debut > 1) r.merge();
+    r.setValue(lib).setFontWeight("bold").setHorizontalAlignment("center").setBackground(couleurs[k++ % 2]);
+  }
+  sh.getRange(2, 1, 1, cols.length).setValues([cols.map(function (x) { return x.code; })]);
+  styleEntete_(sh.getRange(2, 1, 1, cols.length));
+  sh.getRange(3, 1, 1, cols.length).setValues([cols.map(function (x) { return x.label; })])
+    .setFontStyle("italic").setFontSize(8).setWrap(true).setVerticalAlignment("top");
+  sh.setRowHeight(3, 60);
+  sh.setFrozenRows(3); sh.setFrozenColumns(2);
+  reglesMasque_(sh);
+  SpreadsheetApp.flush();
+  return sh;
+}
+
+function reglesMasque_(sh) {
+  const cols = colonnesMasque_(), n = sh.getMaxRows() - 3, p0 = CONFIG.PREMIERE_LIGNE_DONNEES;
+  const plage = sh.getRange(p0, 1, n, cols.length), L = lettreColonne_(cols.length);
+  sh.getRange(p0, 1, n, sh.getMaxColumns()).clearDataValidations();
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied("=$" + L + "4=\"REJETE\"")
+      .setBackground("#F4CCCC").setFontColor("#990000").setRanges([plage]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied("=$" + L + "4=\"A_VERIFIER\"")
+      .setBackground("#FFF2CC").setRanges([plage]).build()
+  ]);
+  sh.getRange(p0, cols.length, n, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(["OK", "A_VERIFIER", "REJETE"], true).build());
+  const iDate = cols.map(function (c) { return c.code; }).indexOf("DATEENQU") + 1;
+  sh.getRange(p0, iDate, n, 1).setNumberFormat("dd/MM/yyyy");
+  sh.getRange(p0, iDate + 1, n, 1).setNumberFormat("@");
+}
+
+function feuilleContacts_(ss) {
+  let sh = ss.getSheetByName("CONTACTS");
+  if (!sh) {
+    sh = ss.insertSheet("CONTACTS", ss.getSheets().length);
+    sh.getRange(1, 1, 1, ENTETE_CONTACTS.length).setValues([ENTETE_CONTACTS]);
+    styleEntete_(sh.getRange(1, 1, 1, ENTETE_CONTACTS.length));
+    sh.setFrozenRows(1);
+    sh.getRange("J:J").setNumberFormat("@");
+    const pl = sh.getRange(2, 1, sh.getMaxRows() - 1, ENTETE_CONTACTS.length);
+    sh.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$L2="Oui"').setBackground("#D9EAD3").setRanges([pl]).build(),
+      SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=$L2="Non"').setFontColor("#999999").setRanges([pl]).build()
+    ]);
+    sh.setColumnWidth(8, 220); sh.setColumnWidth(13, 260);
+  }
+  return sh;
+}
+
+function creerDictionnaire_(ss) {
+  const sh = ongletNeuf_(ss, "DICTIONNAIRE");
+  const lignes = [["VARIABLE", "QUESTION / LIBELLÉ", "FORMAT SPSS", "MESURE", "CODE", "MODALITÉ"]];
+  colonnesMasque_().forEach(function (c) {
+    if (c.valeurs) c.valeurs.forEach(function (p, i) {
+      lignes.push([i === 0 ? c.code : "", i === 0 ? c.label : "", i === 0 ? c.spss : "", i === 0 ? (c.mesure || "") : "", p[0], p[1]]);
+    });
+    else lignes.push([c.code, c.label, c.spss, c.mesure || "", "", "(texte / valeur libre)"]);
+  });
+  sh.getRange(1, 1, lignes.length, 6).setValues(lignes);
+  styleEntete_(sh.getRange(1, 1, 1, 6));
+  sh.setFrozenRows(1); sh.setColumnWidth(2, 380); sh.setColumnWidth(6, 260);
+}
+
+// =====================================================================
+// 6. DIAGNOSTIC : le formulaire en ligne correspond-il au dictionnaire ?
+// =====================================================================
+function diagnostiquer() {
+  const form = formulaire_(), ss = classeur_(), T = FormApp.ItemType;
+  const L = [["ÉLÉMENT", "STATUT", "DÉTAIL"]];
+  let nbKo = 0, nbAlerte = 0;
+  const parNum = {}, vus = {};
+  form.getItems().forEach(function (x) {
+    const n = numeroQuestion_(x.getTitle());
+    if (n) { if (parNum[n]) L.push([x.getTitle(), "⚠", "Numéro Q" + n + " en double : seule la 1re question est codée"]); else parNum[n] = x; }
+  });
+  const choixDe = function (x) {
+    const t = x.getType();
+    if (t === T.MULTIPLE_CHOICE) return x.asMultipleChoiceItem().getChoices().map(function (c) { return c.getValue(); });
+    if (t === T.CHECKBOX) return x.asCheckboxItem().getChoices().map(function (c) { return c.getValue(); });
+    if (t === T.LIST) return x.asListItem().getChoices().map(function (c) { return c.getValue(); });
+    if (t === T.GRID) return x.asGridItem().getColumns();
+    return [];
+  };
+  const requis = function (x) {
+    try {
+      const t = x.getType();
+      if (t === T.MULTIPLE_CHOICE) return x.asMultipleChoiceItem().isRequired();
+      if (t === T.CHECKBOX) return x.asCheckboxItem().isRequired();
+      if (t === T.LIST) return x.asListItem().isRequired();
+      if (t === T.GRID) return x.asGridItem().isRequired();
+      if (t === T.TEXT) return x.asTextItem().isRequired();
+      if (t === T.PARAGRAPH_TEXT) return x.asParagraphTextItem().isRequired();
+    } catch (e) { /* type sans notion d'obligation */ }
+    return null;
+  };
+  const attendu = { radio: [T.MULTIPLE_CHOICE, T.LIST], multi: [T.CHECKBOX], grille: [T.GRID], text: [T.TEXT, T.PARAGRAPH_TEXT] };
+
+  IDENT.forEach(function (d) {
+    const x = form.getItems().filter(function (y) { return champIdent_(y.getTitle()) === d.champ && !numeroQuestion_(y.getTitle()); })[0];
+    if (!x) { L.push([d.titre, d.champ === "enq" ? "✘" : "⚠", "Absente du formulaire"]); if (d.champ === "enq") nbKo++; else nbAlerte++; return; }
+    vus[x.getId()] = true;
+    const r = requis(x);
+    L.push([x.getTitle(), r === false && d.champ !== "mail" && d.champ !== "nom" && d.champ !== "tel" ? "⚠" : "✔",
+      (r ? "Obligatoire" : "Facultative") + (r === false && (d.champ === "tel") ? " — sans téléphone, le contrôle TEL_DOUBLON ne fonctionne pas" : "")]);
+  });
+
+  ITEMS.forEach(function (it) {
+    const x = parNum[it.n];
+    if (!x) { L.push([it.q, "✘", "Question absente : la variable sera toujours vide (99)"]); nbKo++; return; }
+    vus[x.getId()] = true;
+    const msg = [];
+    let statut = "✔";
+    if (attendu[it.type].indexOf(x.getType()) < 0) { statut = "✘"; msg.push("Type « " + x.getType() + " » au lieu de « " + it.type + " »"); }
+    const ch = choixDe(x).map(function (c) { return norm_(c); });
+    const dico = it.type === "multi" ? it.sousItems.map(function (s) { return s[1]; }) : (it.choix || []).map(function (c) { return c[1]; });
+    const kd = dico.map(cle_), kf = ch.map(cle_);
+    const inconnues = ch.filter(function (c) { return kd.indexOf(cle_(c)) < 0 && !(it.alias && Object.keys(it.alias).some(function (a) { return cle_(a) === cle_(c); })); });
+    const manquantes = dico.filter(function (c) { return kf.indexOf(cle_(c)) < 0; });
+    if (inconnues.length) { statut = "✘"; msg.push("Modalités inconnues du dictionnaire (codées 99) : " + inconnues.join(" ; ")); }
+    if (manquantes.length) { if (statut === "✔") statut = "⚠"; msg.push("Modalités du dictionnaire absentes du formulaire : " + manquantes.join(" ; ")); }
+    if (it.type === "grille") {
+      const lf = x.asGridItem().getRows().map(cle_);
+      const lm = it.lignes.filter(function (l) { return lf.indexOf(cle_(l[1])) < 0; }).map(function (l) { return l[1]; });
+      if (lm.length) { statut = "✘"; msg.push("Lignes de grille introuvables : " + lm.join(" ; ")); }
+    }
+    if (it.autre) {
+      const autreOk = x.getType() === T.MULTIPLE_CHOICE && x.asMultipleChoiceItem().hasOtherOption();
+      if (!autreOk) { if (statut === "✔") statut = "⚠"; msg.push("Option « Autre » désactivée : " + it.autre.variable + " restera vide"); }
+    }
+    const r = requis(x);
+    if (r === false && it.type !== "text") { if (statut === "✔") statut = "⚠"; msg.push("Facultative : une question sautée sera codée 99"); }
+    if (statut === "✘") nbKo++; else if (statut === "⚠") nbAlerte++;
+    L.push([x.getTitle(), statut, msg.join(" | ") || "Conforme"]);
+  });
+
+  form.getItems().forEach(function (x) {
+    const t = x.getType();
+    if (vus[x.getId()] || t === T.SECTION_HEADER || t === T.PAGE_BREAK || t === T.IMAGE || t === T.VIDEO) return;
+    L.push([x.getTitle(), "⚠", "Question hors dictionnaire : non codée, non exportée"]);
+    nbAlerte++;
+  });
+
+  const verdict = nbKo ? "✘ " + nbKo + " blocage(s), " + nbAlerte + " alerte(s) : corriger avant le terrain" :
+                         "✔ Codification possible — " + nbAlerte + " alerte(s) à lire";
+  const sh = ongletNeuf_(ss, "DIAGNOSTIC_FORMULAIRE");
+  sh.getRange(1, 1).setValue("DIAGNOSTIC DU FORMULAIRE — " + fmtDouala_(new Date(), "dd/MM/yyyy HH:mm")).setFontSize(13).setFontWeight("bold");
+  sh.getRange(2, 1).setValue(verdict).setFontWeight("bold").setBackground(nbKo ? "#F4CCCC" : "#D9EAD3");
+  sh.getRange(4, 1, L.length, 3).setValues(L);
+  styleEntete_(sh.getRange(4, 1, 1, 3));
+  const pl = sh.getRange(5, 2, L.length - 1, 1);
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("✘").setBackground("#F4CCCC").setRanges([pl]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("⚠").setBackground("#FFF2CC").setRanges([pl]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("✔").setBackground("#D9EAD3").setRanges([pl]).build()
+  ]);
+  sh.setColumnWidth(1, 420); sh.setColumnWidth(2, 70); sh.setColumnWidth(3, 700);
+  sh.getRange(5, 3, L.length, 1).setWrap(true);
+  sh.setFrozenRows(4);
+  return verdict;
+}
+
+// =====================================================================
+// 7. SYNCHRONISATION FORMULAIRE -> MASQUE (V5 : idempotente et auto-reparatrice)
+//    Principe : chaque ligne du masque porte l'identifiant Google de sa reponse
+//    (colonne technique IDREPONSE, apres STATUTQC, non exportee). A chaque passage,
+//    le script compare le masque aux reponses du formulaire et :
+//      - ajoute les reponses manquantes (meme si une soumission precedente a echoue) ;
+//      - reconstruit le masque s'il contient des doublons, des lignes ecrites par
+//        un autre script, des lignes vides ou des fiches supprimees du formulaire.
+//    Une fiche ne peut donc plus etre perdue ni comptee deux fois.
+// =====================================================================
+const COL_ID = "IDREPONSE";
+
+function telsDejaVus_(ss) {
+  const sh = feuilleContacts_(ss), vus = {};
+  if (sh.getLastRow() > 1) sh.getRange(2, 10, sh.getLastRow() - 1, 1).getValues().forEach(function (l) {
+    const k = String(l[0]).replace(/\D/g, "").replace(/^237/, "");
+    if (k) vus[k] = true;
+  });
+  return vus;
+}
+
+function seuilDelai_(ss) {
+  try {
+    const r = ss.getRangeByName("P_SEUIL_DELAI");
+    const v = r ? Number(r.getValue()) : 0;
+    return v > 0 ? v : CONFIG.SEUIL_DELAI_MIN;
+  } catch (e) { return CONFIG.SEUIL_DELAI_MIN; }
+}
+
+/** Onglet du masque, avec sa colonne technique IDREPONSE (creee si absente). */
+function masque_(ss) {
+  let sh = ss.getSheetByName("MASQUE_DEPOUILLEMENT");
+  if (!sh) sh = creerMasque_(ss);
+  const nC = colonnesMasque_().length;
+  if (sh.getMaxColumns() < nC + 1) sh.insertColumnsAfter(sh.getMaxColumns(), nC + 1 - sh.getMaxColumns());
+  if (sh.getRange(2, nC + 1).getValue() !== COL_ID) {
+    sh.getRange(1, nC + 1, 3, 1).setValues([["Technique"], [COL_ID], ["Identifiant Google de la réponse — ne pas modifier (non exporté vers SPSS)"]]);
+    sh.getRange(CONFIG.PREMIERE_LIGNE_DONNEES, nC + 1, Math.max(sh.getMaxRows() - 3, 1), 1).setNumberFormat("@").setFontColor("#999999");
+  }
+  return sh;
+}
+
+/** Ecrit des lignes dans le masque. La date est ecrite a minuit heure de Douala,
+ *  quel que soit le fuseau du projet de script (sinon J1/J2/J3 et AUJOURD'HUI restent a 0). */
+function ecrireLignes_(sh, lignes, premiere) {
+  if (!lignes.length) return;
+  const iDate = colonnesMasque_().map(function (c) { return c.code; }).indexOf("DATEENQU");
+  const out = lignes.map(function (l) {
+    const x = l.slice();
+    if (typeof x[iDate] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x[iDate])) {
+      x[iDate] = Utilities.parseDate(x[iDate] + " 00:00:00", CONFIG.FUSEAU, "yyyy-MM-dd HH:mm:ss");
+    }
+    return x;
+  });
+  const besoin = premiere + out.length - 1;
+  if (besoin > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), besoin - sh.getMaxRows() + 200);
+  sh.getRange(premiere, 1, out.length, out[0].length).setValues(out);
+}
+
+/** Numero d'ordre d'un N° de fiche : « DLA-ENQ1-012 » -> 12 (0 si illisible). */
+function numSeq_(num) {
+  const m = String(num || "").match(/-(\d+)$/);
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * FONCTION PURE : compare le masque aux reponses et decide quoi faire.
+ * @param {Array<{id:string,num:string}>} masque  une entree par ligne lue dans le masque
+ * @param {Array<{id:string}>} reps               reponses du formulaire
+ * @param {boolean} complet                       true si reps = TOUTES les reponses
+ */
+function planSync_(masque, reps, complet) {
+  const dansMasque = {}, dansForm = {};
+  let sansId = 0, doublons = 0, orphelines = 0, trous = 0;
+  masque.forEach(function (m) {
+    if (!m.id && !m.num) { trous++; return; }
+    if (!m.id) { sansId++; return; }
+    if (dansMasque[m.id]) doublons++;
+    dansMasque[m.id] = true;
+  });
+  const aAjouter = [];
+  reps.forEach(function (r) {
+    if (!dansForm[r.id] && !dansMasque[r.id]) aAjouter.push(r.id);
+    dansForm[r.id] = true;
+  });
+  if (complet) Object.keys(dansMasque).forEach(function (id) { if (!dansForm[id]) orphelines++; });
+  const raisons = [];
+  if (sansId) raisons.push(sansId + " ligne(s) sans identifiant (écrites par une ancienne version, un autre script ou à la main)");
+  if (doublons) raisons.push(doublons + " fiche(s) en double");
+  if (trous) raisons.push(trous + " ligne(s) vide(s) au milieu du masque");
+  if (orphelines) raisons.push(orphelines + " fiche(s) dont la réponse a été supprimée du formulaire");
+  return { mode: raisons.length ? "RECONSTRUIRE" : (aAjouter.length ? "AJOUTER" : "RIEN"), aAjouter: aAjouter, raisons: raisons,
+           sansId: sansId, doublons: doublons, orphelines: orphelines, trous: trous, n: 0 };
+}
+
+function enqDe_(lu) {
+  const x = lu.id.enq;
+  return norm_(Array.isArray(x) ? x[0] : x).toUpperCase();
+}
+
+function journal_(ss, source, message) {
+  try {
+    let sh = ss.getSheetByName("JOURNAL_SYNC");
+    if (!sh) {
+      sh = ss.insertSheet("JOURNAL_SYNC", ss.getSheets().length);
+      sh.getRange(1, 1, 1, 3).setValues([["DATE", "SOURCE", "ÉVÉNEMENT"]]);
+      styleEntete_(sh.getRange(1, 1, 1, 3));
+      sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 110); sh.setColumnWidth(3, 900); sh.setFrozenRows(1);
+    }
+    sh.appendRow([fmtDouala_(new Date(), "dd/MM/yyyy HH:mm:ss"), source, String(message).substr(0, 1500)]);
+  } catch (e) { Logger.log("Journal indisponible : " + e.message + " — " + message); }
+}
+
+/** Ajoute au masque les reponses manquantes (sans toucher aux lignes existantes). */
+function ajouter_(ss, sh, data, reps, ids, props) {
+  const nC = colonnesMasque_().length;
+  let etat;
+  try { etat = JSON.parse(props.getProperty("ETAT") || "{}"); } catch (e) { etat = {}; }
+  if (!etat.seq) etat.seq = {};
+  if (!etat.dernier) etat.dernier = {};
+  data.forEach(function (l) {                                  // jamais deux fois le meme N° de fiche
+    const enq = norm_(l[1]).toUpperCase(), s = numSeq_(l[0]);
+    if (enq && s) etat.seq[enq] = Math.max(etat.seq[enq] || 0, s);
+  });
+  const voulu = {}, pris = {};
+  ids.forEach(function (i) { voulu[i] = true; });
+  const aFaire = reps.filter(function (r) { const i = r.getId(); if (!voulu[i] || pris[i]) return false; pris[i] = true; return true; })
+    .sort(function (a, b) { return a.getTimestamp() - b.getTimestamp(); });
+  if (!aFaire.length) return 0;
+  const enqs = lireEnqueteurs_(ss), seuil = seuilDelai_(ss), telsVus = telsDejaVus_(ss), contacts = [];
+  let tsMax = Number(props.getProperty("DERNIER_TS") || 0);
+  const lignes = aFaire.map(function (r) {
+    const f = { lu: structurer_(reponseEnListe_(r)), horodatage: r.getTimestamp(), enqueteurs: enqs, seuilDelai: seuil, telsVus: telsVus };
+    const l = construireLigne_(f, etat, fmtDouala_);
+    l.push(r.getId());
+    contacts.push(f.contact);
+    tsMax = Math.max(tsMax, r.getTimestamp().getTime());
+    return l;
+  });
+  ecrireLignes_(sh, lignes, CONFIG.PREMIERE_LIGNE_DONNEES + data.length);
+  const shc = feuilleContacts_(ss);
+  shc.getRange(shc.getLastRow() + 1, 1, contacts.length, ENTETE_CONTACTS.length).setValues(contacts);
+  props.setProperties({ ETAT: JSON.stringify(etat), DERNIER_TS: String(tsMax) });
+  return lignes.length;
+}
+
+/** Reecrit tout le masque depuis les reponses du formulaire.
+ *  Conserve : les statuts REJETE du superviseur et les N° de fiche deja attribues. */
+function reconstruire_(ss, sh, data, reps, props) {
+  const cols = colonnesMasque_(), nC = cols.length, iStat = nC - 1, p0 = CONFIG.PREMIERE_LIGNE_DONNEES;
+  const rejId = {}, rejNum = {}, seqConnu = {};
+  let nRej = 0;
+  data.forEach(function (l) {
+    const id = norm_(l[nC]), num = norm_(l[0]);
+    if (l[iStat] === "REJETE") { if (id) rejId[id] = true; else if (num) rejNum[num] = true; }
+    if (id && num && !(id in seqConnu)) { const s = numSeq_(num); if (s) seqConnu[id] = s; }
+  });
+  const pris = {};
+  const fiches = reps.filter(function (r) { const i = r.getId(); if (pris[i]) return false; pris[i] = true; return true; })
+    .sort(function (a, b) { return a.getTimestamp() - b.getTimestamp(); })
+    .map(function (r) { return { r: r, id: r.getId(), lu: structurer_(reponseEnListe_(r)) }; });
+
+  const etat = { seq: {}, dernier: {} }, utilises = {};
+  fiches.forEach(function (f) {                                 // reserve les numeros deja attribues
+    const s = seqConnu[f.id], enq = enqDe_(f.lu);
+    if (s && !utilises[enq + "|" + s]) { utilises[enq + "|" + s] = true; f.seq = s; etat.seq[enq] = Math.max(etat.seq[enq] || 0, s); }
+  });
+  const enqs = lireEnqueteurs_(ss), seuil = seuilDelai_(ss), telsVus = {}, contacts = [];
+  let tsMax = 0;
+  const lignes = fiches.map(function (f) {
+    const x = { lu: f.lu, horodatage: f.r.getTimestamp(), enqueteurs: enqs, seuilDelai: seuil, telsVus: telsVus, seqForce: f.seq || 0 };
+    const l = construireLigne_(x, etat, fmtDouala_);
+    if (rejId[f.id] || (!(f.id in seqConnu) && rejNum[l[0]])) { l[iStat] = "REJETE"; x.contact[x.contact.length - 1] = "REJETE"; nRej++; }
+    l.push(f.id);
+    contacts.push(x.contact);
+    tsMax = Math.max(tsMax, f.r.getTimestamp().getTime());
+    return l;
+  });
+  if (data.length) sh.getRange(p0, 1, data.length, nC + 1).clearContent();
+  ecrireLignes_(sh, lignes, p0);
+  const shc = feuilleContacts_(ss);
+  if (shc.getLastRow() > 1) shc.getRange(2, 1, shc.getLastRow() - 1, ENTETE_CONTACTS.length).clearContent();
+  if (contacts.length) shc.getRange(2, 1, contacts.length, ENTETE_CONTACTS.length).setValues(contacts);
+  props.setProperties({ ETAT: JSON.stringify(etat), DERNIER_TS: String(tsMax) });
+  return { n: lignes.length, rejetes: nRej };
+}
+
+/**
+ * Coeur de la synchronisation.
+ * @param {string} source          SOUMISSION | FILET | MANUEL | REPARER | EXPORT
+ * @param {Object} reponseDirecte  reponse recue par le declencheur (ou null)
+ * @param {boolean} complet        true = comparer a TOUTES les reponses du formulaire
+ * @param {boolean} forcer         true = reconstruire le masque quoi qu'il arrive
+ */
+function synchroniser_(source, reponseDirecte, complet, forcer) {
+  const props = PropertiesService.getScriptProperties();
+  const verrou = LockService.getScriptLock();
+  if (!verrou.tryLock(source === "FILET" ? 15000 : 120000)) {
+    props.setProperty("DERNIERE_ERREUR", fmtDouala_(new Date(), "dd/MM/yyyy HH:mm:ss") + " — " + source + " : synchronisation déjà en cours, rattrapage au prochain passage");
+    return { mode: "OCCUPE", raisons: [], n: 0 };
+  }
+  try {
+    const ss = classeur_(), form = formulaire_();
+    if (ss.getSpreadsheetTimeZone() !== CONFIG.FUSEAU) ss.setSpreadsheetTimeZone(CONFIG.FUSEAU);
+    const sh = masque_(ss), nC = colonnesMasque_().length, p0 = CONFIG.PREMIERE_LIGNE_DONNEES;
+    const n = sh.getLastRow() - p0 + 1;
+    const data = n > 0 ? sh.getRange(p0, 1, n, nC + 1).getValues() : [];
+    const t0 = Number(props.getProperty("DERNIER_TS") || 0);
+    if (forcer || !t0) complet = true;
+    let reps = complet ? form.getResponses() : form.getResponses(new Date(t0 - 20 * 60000));
+    if (reponseDirecte && !reps.some(function (r) { return r.getId() === reponseDirecte.getId(); })) reps.push(reponseDirecte);
+
+    const plan = planSync_(data.map(function (l) { return { id: norm_(l[nC]), num: norm_(l[0]) }; }),
+                           reps.map(function (r) { return { id: r.getId() }; }), complet);
+    if (forcer && plan.mode !== "RECONSTRUIRE") { plan.mode = "RECONSTRUIRE"; plan.raisons.push("demande manuelle"); }
+
+    if (plan.mode === "RECONSTRUIRE") {
+      if (!complet) reps = form.getResponses();
+      const r = reconstruire_(ss, sh, data, reps, props);
+      plan.n = r.n;
+      journal_(ss, source, "Masque reconstruit : " + r.n + " fiche(s) pour " + reps.length + " réponse(s), " + r.rejetes +
+        " REJETE conservé(s). Motif : " + plan.raisons.join(" ; "));
+    } else if (plan.mode === "AJOUTER") {
+      plan.n = ajouter_(ss, sh, data, reps, plan.aAjouter, props);
+      if (source !== "SOUMISSION" || plan.n > 1) journal_(ss, source, plan.n + " fiche(s) ajoutée(s) en rattrapage.");
+    }
+    if (plan.mode !== "RIEN") SpreadsheetApp.flush();
+    props.setProperty("DERNIERE_SYNC", fmtDouala_(new Date(), "dd/MM/yyyy HH:mm:ss") + " (" + source + ")");
+    return plan;
+  } finally {
+    verrou.releaseLock();
+  }
+}
+
+/** Declencheur : a chaque soumission du formulaire. Une erreur n'est plus jamais silencieuse. */
+function surSoumission(e) {
+  try {
+    synchroniser_("SOUMISSION", e && e.response ? e.response : null, false, false);
+  } catch (err) {
+    const msg = fmtDouala_(new Date(), "dd/MM/yyyy HH:mm:ss") + " — SOUMISSION : " + err.message;
+    PropertiesService.getScriptProperties().setProperty("DERNIERE_ERREUR", msg);
+    try { journal_(classeur_(), "ERREUR", err.message + (err.stack ? " | " + String(err.stack).substr(0, 600) : "")); } catch (e2) { /* rien */ }
+    throw err;                                                  // visible dans « Exécutions » d'Apps Script
+  }
+}
+
+/** Declencheur horaire (toutes les 10 min) : rattrape toute fiche manquante, retire tout doublon. */
+function filetDeSecurite() {
+  try { synchroniser_("FILET", null, true, false); }
+  catch (err) {
+    PropertiesService.getScriptProperties().setProperty("DERNIERE_ERREUR", fmtDouala_(new Date(), "dd/MM/yyyy HH:mm:ss") + " — FILET : " + err.message);
+    try { journal_(classeur_(), "ERREUR", "FILET : " + err.message); } catch (e2) { /* rien */ }
+  }
+}
+
+/** Recode toutes les reponses du formulaire (conserve les REJETE et les N° de fiche). */
+function reconstruireMasque() {
+  const plan = synchroniser_("MANUEL", null, true, true);
+  Logger.log(plan.mode === "OCCUPE" ? "Synchronisation déjà en cours : relancez dans une minute." : plan.n + " fiche(s) dans le masque.");
+}
+
+function installerDeclencheurs_(form) {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (["surSoumission", "filetDeSecurite", "rapportJournalier"].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger("surSoumission").forForm(form).onFormSubmit().create();
+  ScriptApp.newTrigger("filetDeSecurite").timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger("rapportJournalier").timeBased().everyDays(1).atHour(19).inTimezone(CONFIG.FUSEAU).create();   // rapport du soir
+}
+
+/**
+ * >>> A LANCER EN CAS DE PROBLEME (sans danger, autant de fois que necessaire) <<<
+ * Remet les declencheurs de CE projet, le fuseau du classeur, reconstruit le masque
+ * depuis les reponses du formulaire et ecrit le bilan dans l'onglet SANTE_SYNC.
+ * Aucune reponse du formulaire n'est modifiee ni supprimee.
+ */
+function reparer() {
+  const form = formulaire_(), ss = classeur_();
+  if (ss.getSpreadsheetTimeZone() !== CONFIG.FUSEAU) ss.setSpreadsheetTimeZone(CONFIG.FUSEAU);
+  installerDeclencheurs_(form);
+  reglesMasque_(masque_(ss));
+  const plan = synchroniser_("REPARER", null, true, true);
+  const verdict = sante();
+  Logger.log(plan.mode === "OCCUPE" ? "Synchronisation déjà en cours : relancez reparer() dans une minute." : "Masque reconstruit : " + plan.n + " fiche(s).");
+  Logger.log("Bilan (onglet SANTE_SYNC) : " + verdict);
+  Logger.log("Classeur : " + ss.getUrl());
+}
+
+/** Bilan de synchronisation : onglet SANTE_SYNC. Ne modifie ni le masque ni le formulaire. */
+function sante() {
+  const props = PropertiesService.getScriptProperties();
+  const ss = classeur_(), form = formulaire_(), sh = masque_(ss);
+  const nC = colonnesMasque_().length, p0 = CONFIG.PREMIERE_LIGNE_DONNEES, iDate = colonnesMasque_().map(function (c) { return c.code; }).indexOf("DATEENQU");
+  const n = sh.getLastRow() - p0 + 1;
+  const data = n > 0 ? sh.getRange(p0, 1, n, nC + 1).getValues() : [];
+  const reps = form.getResponses();
+  const plan = planSync_(data.map(function (l) { return { id: norm_(l[nC]), num: norm_(l[0]) }; }), reps.map(function (r) { return { id: r.getId() }; }), true);
+  const nums = {}, parJourM = {}, parJourF = {};
+  let numDoublons = 0, nFiches = 0, dateAvecHeure = 0;
+  data.forEach(function (l) {
+    const num = norm_(l[0]); if (!num) return;
+    nFiches++;
+    if (nums[num]) numDoublons++; nums[num] = true;
+    const d = l[iDate];
+    const j = d instanceof Date ? fmtDouala_(d, "dd/MM/yyyy") : String(d);
+    if (d instanceof Date && fmtDouala_(d, "HH:mm:ss") !== "00:00:00") dateAvecHeure++;
+    if (l[nC - 1] !== "REJETE") parJourM[j] = (parJourM[j] || 0) + 1;
+  });
+  reps.forEach(function (r) { const j = fmtDouala_(r.getTimestamp(), "dd/MM/yyyy"); parJourF[j] = (parJourF[j] || 0) + 1; });
+  const jours = Object.keys(parJourF).concat(Object.keys(parJourM)).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort(function (a, b) {
+    return a.split("/").reverse().join("") < b.split("/").reverse().join("") ? -1 : 1; });
+  let dest = "";
+  try { dest = form.getDestinationId(); } catch (e) { dest = ""; }
+  const decl = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  const nSub = decl.filter(function (x) { return x === "surSoumission"; }).length, nFilet = decl.filter(function (x) { return x === "filetDeSecurite"; }).length;
+  const jP = ["P_J1", "P_J2", "P_J3"].map(function (k) {
+    try { const v = ss.getRangeByName(k).getValue(); return v instanceof Date ? fmtDouala_(v, "dd/MM/yyyy") : "(non saisie)"; } catch (e) { return "(introuvable)"; }
+  });
+
+  const L = [["CONTRÔLE", "VALEUR", "ÉTAT", "QUE FAIRE"]];
+  const ok = function (c) { return c ? "✔" : "✘"; };
+  const ecart = reps.length - nFiches;
+  L.push(["Réponses dans le formulaire", reps.length, "", ""]);
+  L.push(["Fiches dans le masque", nFiches, ok(ecart === 0), ecart === 0 ? "" : "Écart de " + ecart + " : exécuter reparer()"]);
+  L.push(["Réponses absentes du masque", plan.aAjouter.length, ok(!plan.aAjouter.length), plan.aAjouter.length ? "Rattrapage automatique sous 10 min, ou reparer()" : ""]);
+  L.push(["Fiches en double dans le masque", plan.doublons, ok(!plan.doublons), plan.doublons ? "reparer()" : ""]);
+  L.push(["Lignes sans identifiant de réponse", plan.sansId, ok(!plan.sansId),
+    plan.sansId ? "Si elles reviennent après reparer() : un AUTRE script écrit dans ce masque. Supprimer son déclencheur sur script.google.com > Déclencheurs" : ""]);
+  L.push(["Fiches dont la réponse a été supprimée du formulaire", plan.orphelines, ok(!plan.orphelines), plan.orphelines ? "reparer()" : ""]);
+  L.push(["Lignes vides au milieu du masque", plan.trous, ok(!plan.trous), plan.trous ? "reparer()" : ""]);
+  L.push(["N° de fiche en double", numDoublons, ok(!numDoublons), numDoublons ? "reparer()" : ""]);
+  L.push(["Dates du masque avec une heure parasite", dateAvecHeure, ok(!dateAvecHeure), dateAvecHeure ? "Cause des colonnes J1/J2/J3 à 0 : reparer()" : ""]);
+  L.push(["Déclencheur « à la soumission » de ce projet", nSub, ok(nSub === 1), nSub === 1 ? "" : "reparer()"]);
+  L.push(["Déclencheur « filet de sécurité » (10 min)", nFilet, ok(nFilet === 1), nFilet === 1 ? "" : "reparer()"]);
+  L.push(["Classeur de destination du formulaire = ce classeur", dest ? (dest === ss.getId() ? "Oui" : "NON") : "(aucune destination)", ok(!dest || dest === ss.getId()),
+    dest && dest !== ss.getId() ? "Le formulaire écrit ses réponses brutes dans un autre classeur : vous regardez peut-être le mauvais fichier" : ""]);
+  L.push(["Fuseau du classeur", ss.getSpreadsheetTimeZone(), ok(ss.getSpreadsheetTimeZone() === CONFIG.FUSEAU), ""]);
+  L.push(["Fuseau du projet de script", Session.getScriptTimeZone(), "", "Sans incidence depuis la V5"]);
+  L.push(["Dates J1 / J2 / J3 (onglet PARAMETRES)", jP.join(" · "), "", "Doivent correspondre aux jours ci-dessous"]);
+  jours.forEach(function (j) {
+    L.push(["Jour " + j + " — réponses formulaire / fiches masque (hors REJETE)", (parJourF[j] || 0) + " / " + (parJourM[j] || 0), "", jP.indexOf(j) < 0 ? "Jour absent de PARAMETRES : non compté en J1/J2/J3" : ""]);
+  });
+  L.push(["Dernière synchronisation", props.getProperty("DERNIERE_SYNC") || "(jamais)", "", ""]);
+  L.push(["Dernière erreur", props.getProperty("DERNIERE_ERREUR") || "(aucune)", "", "Détail : onglet JOURNAL_SYNC"]);
+
+  const nKo = L.filter(function (l) { return l[2] === "✘"; }).length;
+  const verdict = nKo ? "✘ " + nKo + " anomalie(s) : exécuter reparer()" : "✔ Masque synchronisé avec le formulaire (" + nFiches + " fiches)";
+  let s = ss.getSheetByName("SANTE_SYNC");
+  if (s) { s.clear(); s.clearConditionalFormatRules(); } else s = ss.insertSheet("SANTE_SYNC", ss.getSheets().length);
+  s.getRange(1, 1).setValue("SANTÉ DE LA SYNCHRONISATION — " + fmtDouala_(new Date(), "dd/MM/yyyy HH:mm")).setFontSize(13).setFontWeight("bold");
+  s.getRange(2, 1).setValue(verdict).setFontWeight("bold").setBackground(nKo ? "#F4CCCC" : "#D9EAD3");
+  s.getRange(4, 1, L.length, 4).setNumberFormat("@").setValues(L.map(function (l) { return l.map(String); }));
+  styleEntete_(s.getRange(4, 1, 1, 4));
+  const pl = s.getRange(5, 3, L.length - 1, 1);
+  s.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("✘").setBackground("#F4CCCC").setRanges([pl]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo("✔").setBackground("#D9EAD3").setRanges([pl]).build()
+  ]);
+  s.setColumnWidth(1, 430); s.setColumnWidth(2, 240); s.setColumnWidth(3, 60); s.setColumnWidth(4, 640);
+  s.getRange(5, 4, L.length, 1).setWrap(true);
+  s.setFrozenRows(4);
+  return verdict;
+}
+
+// =====================================================================
+// 8. TABLEAUX DE SUIVI (100 % formules) — tous ventiles par jour J1 / J2 / J3
+//    Les jours sont les dates saisies dans l'onglet PARAMETRES (DATE_J1, J2, J3).
+// =====================================================================
+function listeEnqueteurs_(ss) {
+  const sh = ss.getSheetByName("ENQUETEURS");
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().filter(function (l) { return norm_(l[0]); })
+    .map(function (l) { return { id: norm_(l[0]).toUpperCase(), nom: norm_(l[1]), zone: norm_(l[2]).toUpperCase() }; });
+}
+
+/** Quotas en vigueur : cases jaunes de SUIVI_CIBLES si l'onglet existe, sinon cahier des charges. */
+function lireQuotas_(ss) {
+  const q = {};
+  Object.keys(QUOTAS).forEach(function (k) { q[k] = QUOTAS[k].slice(); });
+  const sh = ss.getSheetByName("SUIVI_CIBLES");
+  if (!sh || sh.getRange(3, 1).getValue() !== "CODE Q1") return q;
+  sh.getRange(4, 1, Object.keys(QUOTAS).length, 9).getValues().forEach(function (l) {
+    const c = Number(l[0]);
+    if (!q[c]) return;
+    [2, 5, 8].forEach(function (j, k) { const v = Number(l[j]); if (l[j] !== "" && isFinite(v) && v >= 0) q[c][1 + k] = v; });
+  });
+  return q;
+}
+
+function libelleJour_(k) { return '=IF(P_J' + k + '="","J' + k + ' (date à saisir)","J' + k + ' — "&TEXT(P_J' + k + ',"dd/mm"))'; }
+
+function creerTableauDeBord_(ss) {
+  const sh = ongletNeuf_(ss, "TABLEAU_DE_BORD");
+  const E = refMasque_("CODEENQU"), D = refMasque_("DATEENQU"), S = refMasque_("STATUTQC"), A = refMasque_("ANOMALIE"), Z = refMasque_("CODEZONE");
+  const V = S + ",\"<>REJETE\"";
+  const nEnq = Math.max(listeEnqueteurs_(ss).length, 1);
+  sh.getRange("A1").setValue("SUIVI TERRAIN EN TEMPS RÉEL — EDM Électrique Cameroun").setFontSize(14).setFontWeight("bold");
+  sh.getRange("A2").setValue("Fiches REJETE exclues. Dates J1/J2/J3 et seuils : onglet PARAMETRES. Détail par jour : RECAP_JOURS et RAPPORT_J1/J2/J3.")
+    .setFontStyle("italic").setFontColor("#666666");
+  const ent = ["ENQ_ID", "NOM", "ZONE", "J1", "J2", "J3", "AUJOURD'HUI", "CUMUL", "OBJECTIF", "% RÉALISÉ", "DÉLAIS COURTS", "À VÉRIFIER", "REJETÉES", "STATUT", "RANG (cumul)"];
+  sh.getRange(3, 4, 1, 3).setFormulas([[1, 2, 3].map(libelleJour_)]).setFontStyle("italic").setFontColor("#666666").setHorizontalAlignment("center");
+  sh.getRange(4, 1, 1, ent.length).setValues([ent]); styleEntete_(sh.getRange(4, 1, 1, ent.length));
+  const fin = 4 + nEnq, f = [];
+  const jr = function (k, r) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + E + ",$A" + r + "," + D + ",P_J" + k + "," + V + "))"; };
+  for (let i = 0; i < nEnq; i++) {
+    const r = 5 + i, re = 2 + i;
+    f.push(["=ENQUETEURS!A" + re, "=ENQUETEURS!B" + re, "=ENQUETEURS!C" + re, jr(1, r), jr(2, r), jr(3, r),
+      "=COUNTIFS(" + E + ",$A" + r + "," + D + ",TODAY()," + V + ")",
+      "=COUNTIFS(" + E + ",$A" + r + "," + V + ")",
+      "=ENQUETEURS!D" + re,
+      "=IF(N(I" + r + ")=0,0,H" + r + "/I" + r + ")",
+      "=COUNTIFS(" + E + ",$A" + r + "," + A + ",\"*DELAI_COURT*\"," + V + ")",
+      "=COUNTIFS(" + E + ",$A" + r + "," + S + ",\"A_VERIFIER\")",
+      "=COUNTIFS(" + E + ",$A" + r + "," + S + ",\"REJETE\")",
+      "=IF(C" + r + "=\"\",\"⚠ Zone à saisir\",IF(G" + r + ">P_SEUIL_VOLUME,\"⚠ Volume suspect\",IF(H" + r + ">=I" + r + ",\"✔ Objectif atteint\"," +
+        "IF(K" + r + ">0,\"⚠ Délais courts\",\"En cours\"))))",
+      "=IF(H" + r + "=0,\"\",RANK(H" + r + ",$H$5:$H$" + fin + "))"]);
+  }
+  sh.getRange(5, 1, nEnq, ent.length).setFormulas(f);
+  // Fiches dont l'identifiant n'est pas dans ENQUETEURS, puis total general
+  const tj = function (k) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + E + ",\"<>\"," + D + ",P_J" + k + "," + V + "))"; };
+  sh.getRange(fin + 1, 1, 2, ent.length).setValues([
+    ["Hors liste", "", "", "", "", "", "", "=H" + (fin + 2) + "-SUM(H5:H" + fin + ")", "", "", "", "", "", "", ""],
+    ["TOTAL", "", "", tj(1), tj(2), tj(3), "=COUNTIFS(" + E + ",\"<>\"," + D + ",TODAY()," + V + ")", "=COUNTIFS(" + E + ",\"<>\"," + V + ")",
+     "=SUM(I5:I" + fin + ")", "=IF(N(I" + (fin + 2) + ")=0,0,H" + (fin + 2) + "/I" + (fin + 2) + ")",
+     "=COUNTIFS(" + A + ",\"*DELAI_COURT*\"," + V + ")", "=COUNTIFS(" + S + ",\"A_VERIFIER\")", "=COUNTIFS(" + S + ",\"REJETE\")", "", ""]]);
+  sh.getRange(fin + 1, 1, 1, ent.length).setFontStyle("italic");
+  sh.getRange(fin + 2, 1, 1, ent.length).setFontWeight("bold").setBackground("#D9E1F2");
+  sh.getRange(5, 10, nEnq + 2, 1).setNumberFormat("0%");
+
+  const z0 = fin + 5, Q = lireQuotas_(ss);
+  sh.getRange(z0 - 1, 1).setValue("RÉCAPITULATIF PAR ZONE ET PAR JOUR").setFontWeight("bold");
+  sh.getRange(z0, 1, 1, 9).setValues([["ZONE", "ENQUÊTEURS", "J1", "J2", "J3", "CUMUL", "OBJECTIF (capacité)", "QUOTA", "% DU QUOTA"]]);
+  styleEntete_(sh.getRange(z0, 1, 1, 9));
+  const zf = ZONES.map(function (z, i) {
+    const r = z0 + 1 + i, q = Object.keys(Q).reduce(function (s, k) { return s + Q[k][1 + i]; }, 0);
+    const zj = function (k) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + Z + "," + z.code + "," + D + ",P_J" + k + "," + V + "))"; };
+    return [z.id, "=COUNTIF($C$5:$C$" + fin + ",A" + r + ")", zj(1), zj(2), zj(3), "=COUNTIFS(" + Z + "," + z.code + "," + V + ")",
+            "=SUMIF($C$5:$C$" + fin + ",A" + r + ",$I$5:$I$" + fin + ")", q, "=IF(H" + r + "=0,0,F" + r + "/H" + r + ")"];
+  });
+  const rt = z0 + 1 + ZONES.length;
+  const som = function (L) { return "=SUM(" + L + (z0 + 1) + ":" + L + (rt - 1) + ")"; };
+  zf.push(["TOTAL", som("B"), som("C"), som("D"), som("E"), som("F"), som("G"), som("H"), "=IF(H" + rt + "=0,0,F" + rt + "/H" + rt + ")"]);
+  sh.getRange(z0 + 1, 1, zf.length, 9).setValues(zf);
+  sh.getRange(rt, 1, 1, 9).setFontWeight("bold");
+  sh.getRange(z0 + 1, 9, zf.length, 1).setNumberFormat("0%");
+
+  const plS = sh.getRange(5, 14, nEnq, 1);
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith("⚠").setBackground("#F4CCCC").setRanges([plS]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith("✔").setBackground("#D9EAD3").setRanges([plS]).build(),
+    SpreadsheetApp.newConditionalFormatRule().setGradientMaxpoint("#6AA84F").setGradientMidpointWithValue("#FFD966",
+      SpreadsheetApp.InterpolationType.NUMBER, "0.5").setGradientMinpoint("#E06666").setRanges([sh.getRange(5, 10, nEnq, 1)]).build()
+  ]);
+  // Fiches par enqueteur et par jour (barres empilees J1 + J2 + J3)
+  sh.insertChart(sh.newChart().setChartType(Charts.ChartType.BAR)
+    .addRange(sh.getRange(4, 1, nEnq + 1, 1)).addRange(sh.getRange(4, 4, nEnq + 1, 3))
+    .setMergeStrategy(Charts.ChartMergeStrategy.MERGE_COLUMNS).setNumHeaders(1)
+    .setOption("isStacked", true).setOption("colors", PALETTE.slice(0, 3))
+    .setOption("title", "Fiches valides par enquêteur et par jour").setOption("legend", { position: "top" })
+    .setPosition(rt + 3, 1, 0, 0).build());
+  sh.setFrozenRows(4); sh.setColumnWidth(2, 180); sh.setColumnWidth(14, 170);
+}
+
+function creerTriAPlat_(ss) {
+  const sh = ongletNeuf_(ss, "TRI_A_PLAT");
+  const Z = refMasque_("CODEZONE"), S = refMasque_("STATUTQC"), E = refMasque_("CODEENQU"), D = refMasque_("DATEENQU");
+  const V = S + ",\"<>REJETE\"", W = 13;
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  const vide = function () { return new Array(W).fill(""); };
+  const bj = function (k) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + E + ",\"<>\"," + D + ",P_J" + k + "," + V + "))"; };
+  const lignes = [];
+  let l = vide(); l[0] = "TRI À PLAT EN TEMPS RÉEL, PAR VILLE ET PAR JOUR (fiches REJETE exclues)"; lignes.push(l);
+  l = vide(); l[0] = "Base : fiches valides"; l[1] = "=COUNTIFS(" + E + ",\"<>\"," + V + ")"; l[6] = "Base du jour →"; l[7] = bj(1); l[8] = bj(2); l[9] = bj(3); lignes.push(l);
+  lignes.push(vide());
+  const titres = [];
+  colonnesMasque_().filter(function (c) { return c.valeurs && c.code !== "CODEZONE"; }).forEach(function (c) {
+    const X = refMasque_(c.code);
+    titres.push(lignes.length + 1);
+    l = vide(); l[0] = c.code + " — " + c.label; lignes.push(l);
+    lignes.push(["Code", "Modalité"].concat(ZONES.map(function (z) { return z.libelle; })).concat(["Total", "% base", "J1", "J2", "J3", "% J1", "% J2", "% J3"]));
+    const vals = c.groupe ? c.valeurs.filter(function (p) { return p[0] === 1; }) : c.valeurs;
+    vals.forEach(function (p) {
+      const r = lignes.length + 1;
+      lignes.push([p[0], p[1]].concat(ZONES.map(function (z) { return "=COUNTIFS(" + X + "," + p[0] + "," + Z + "," + z.code + "," + V + ")"; }))
+        .concat(["=COUNTIFS(" + X + "," + p[0] + "," + V + ")", "=IF($B$2=0,0,F" + r + "/$B$2)"])
+        .concat([1, 2, 3].map(function (k) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + X + "," + p[0] + "," + D + ",P_J" + k + "," + V + "))"; }))
+        .concat(["H", "I", "J"].map(function (L) { return "=IF(N(" + L + "$2)=0,\"\"," + L + r + "/" + L + "$2)"; })));
+    });
+    lignes.push(vide());
+  });
+  sh.getRange(1, 1, lignes.length, W).setValues(lignes);
+  sh.getRange("A1").setFontSize(13).setFontWeight("bold");
+  sh.getRange("A2:J2").setFontWeight("bold");
+  sh.getRange(1, 7, lignes.length, 1).setNumberFormat("0.0%");
+  sh.getRange(1, 11, lignes.length, 3).setNumberFormat("0.0%");
+  sh.getRange(2, 7).setNumberFormat("@");
+  sh.getRangeList(titres.map(function (r) { return "A" + r + ":M" + r; })).setFontWeight("bold").setBackground("#D9E1F2");
+  sh.getRangeList(titres.map(function (r) { return "A" + (r + 1) + ":M" + (r + 1); })).setFontWeight("bold").setBackground("#1F4E78").setFontColor("#FFFFFF");
+  sh.getRange(3, 8, 1, 3).setFormulas([[1, 2, 3].map(libelleJour_)]).setFontStyle("italic").setFontColor("#666666");
+  sh.setColumnWidth(1, 70); sh.setColumnWidth(2, 260); sh.setFrozenRows(3);
+}
+
+function creerSuiviCibles_(ss) {
+  const Q = lireQuotas_(ss);                              // conserve les quotas modifies (cases jaunes)
+  const sh = ongletNeuf_(ss, "SUIVI_CIBLES");
+  const ENQ = refMasque_("CODEENQU"), CIB = refMasque_("VOUSETES"), ZON = refMasque_("CODEZONE"), STA = refMasque_("STATUTQC"), D = refMasque_("DATEENQU");
+  const V = STA + ",\"<>REJETE\"", codes = Object.keys(Q).map(Number), nC = codes.length;
+  sh.getRange("A1").setValue("QUOTAS PAR CIBLE (Q1) ET PAR VILLE — cahier des charges 02 (cases jaunes modifiables)").setFontSize(13).setFontWeight("bold");
+  const h = ["CODE Q1", "CIBLE"];
+  ZONES.forEach(function (z) { h.push(z.id + " quota", "réalisé", "%"); });
+  h.push("TOTAL quota", "réalisé", "%");
+  sh.getRange(3, 1, 1, h.length).setValues([h]); styleEntete_(sh.getRange(3, 1, 1, h.length));
+  const rows = codes.map(function (c, i) {
+    const r = 4 + i, row = [c, Q[c][0]];
+    ZONES.forEach(function (z, k) {
+      const Lq = lettreColonne_(3 + 3 * k), Lr = lettreColonne_(4 + 3 * k);
+      row.push(Q[c][1 + k], "=COUNTIFS(" + CIB + "," + c + "," + ZON + "," + z.code + "," + V + ")", "=IF(" + Lq + r + "=0,0," + Lr + r + "/" + Lq + r + ")");
+    });
+    row.push("=C" + r + "+F" + r + "+I" + r, "=D" + r + "+G" + r + "+J" + r, "=IF(L" + r + "=0,0,M" + r + "/L" + r + ")");
+    return row;
+  });
+  const rT = 4 + nC, tot = ["", "TOTAL"];
+  for (let k = 3; k <= h.length; k++) {
+    const L = lettreColonne_(k);
+    tot.push((k - 3) % 3 === 2 ? "=IF(" + lettreColonne_(k - 2) + rT + "=0,0," + lettreColonne_(k - 1) + rT + "/" + lettreColonne_(k - 2) + rT + ")" : "=SUM(" + L + "4:" + L + (rT - 1) + ")");
+  }
+  rows.push(tot);
+  sh.getRange(4, 1, rows.length, h.length).setValues(rows);
+  [3, 6, 9].forEach(function (c) { sh.getRange(4, c, nC, 1).setBackground("#FFF2CC"); });
+  [5, 8, 11, 14].forEach(function (c) { sh.getRange(4, c, nC + 1, 1).setNumberFormat("0%"); });
+  sh.getRange(rT, 1, 1, h.length).setFontWeight("bold");
+
+  // Cibles par ville et par jour
+  const rj = rT + 3;
+  sh.getRange(rj - 1, 1).setValue("CIBLES PAR VILLE ET PAR JOUR (fiches valides)").setFontWeight("bold");
+  const hj = ["CODE Q1", "CIBLE"];
+  ZONES.forEach(function (z) { [1, 2, 3].forEach(function (k) { hj.push(z.id + " J" + k); }); });
+  hj.push("TOTAL J1", "TOTAL J2", "TOTAL J3");
+  sh.getRange(rj, 1, 1, hj.length).setValues([hj]); styleEntete_(sh.getRange(rj, 1, 1, hj.length)); sh.getRange(rj, 1, 1, hj.length).setWrap(true);
+  const rowsJ = codes.map(function (c, i) {
+    const r = rj + 1 + i, row = [c, Q[c][0]];
+    ZONES.forEach(function (z) { [1, 2, 3].forEach(function (k) {
+      row.push("=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + CIB + "," + c + "," + ZON + "," + z.code + "," + D + ",P_J" + k + "," + V + "))"); }); });
+    [1, 2, 3].forEach(function (k) { row.push("=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + CIB + "," + c + "," + D + ",P_J" + k + "," + V + "))"); });
+    return row;
+  });
+  const totJ = ["", "TOTAL"];
+  for (let k = 3; k <= hj.length; k++) { const L = lettreColonne_(k); totJ.push("=SUM(" + L + (rj + 1) + ":" + L + (rj + nC) + ")"); }
+  rowsJ.push(totJ);
+  sh.getRange(rj + 1, 1, rowsJ.length, hj.length).setValues(rowsJ);
+  sh.getRange(rj + nC + 1, 1, 1, hj.length).setFontWeight("bold");
+
+  // Enqueteur x cible : cumul puis chaque jour
+  let r0 = rj + nC + 5;
+  const ids = listeEnqueteurs_(ss);
+  [["CUMUL", 0], ["JOUR 1", 1], ["JOUR 2", 2], ["JOUR 3", 3]].forEach(function (b) {
+    sh.getRange(r0 - 1, 1).setValue("PRODUCTION PAR ENQUÊTEUR ET PAR CIBLE — " + b[0]).setFontWeight("bold");
+    const he = ["ENQ", "ZONE"].concat(codes.map(function (c) { return Q[c][0]; })).concat(["TOTAL"]);
+    sh.getRange(r0, 1, 1, he.length).setValues([he]); styleEntete_(sh.getRange(r0, 1, 1, he.length)); sh.getRange(r0, 1, 1, he.length).setWrap(true);
+    const re = ids.map(function (_, i) {
+      const r = r0 + 1 + i, row = ["=ENQUETEURS!A" + (2 + i), "=ENQUETEURS!C" + (2 + i)];
+      codes.forEach(function (c) {
+        row.push(b[1] ? "=IF(P_J" + b[1] + "=\"\",\"\",COUNTIFS(" + ENQ + ",$A" + r + "," + CIB + "," + c + "," + D + ",P_J" + b[1] + "," + V + "))"
+                      : "=COUNTIFS(" + ENQ + ",$A" + r + "," + CIB + "," + c + "," + V + ")");
+      });
+      row.push("=SUM(C" + r + ":" + lettreColonne_(2 + nC) + r + ")");
+      return row;
+    });
+    if (re.length) sh.getRange(r0 + 1, 1, re.length, he.length).setValues(re);
+    r0 += ids.length + 4;
+  });
+  const plq = [5, 8, 11].map(function (c) { return sh.getRange(4, c, nC, 1); });
+  sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule().setGradientMaxpoint("#6AA84F")
+    .setGradientMidpointWithValue("#FFD966", SpreadsheetApp.InterpolationType.NUMBER, "0.5").setGradientMinpoint("#E06666").setRanges(plq).build()]);
+  sh.setColumnWidth(2, 220); sh.setFrozenRows(3);
+}
+
+/** RECAP_JOURS : les statistiques de chaque jour cote a cote (J1 | J2 | J3 | cumul), en direct. */
+function creerRecapJours_(ss) {
+  const sh = ongletNeuf_(ss, "RECAP_JOURS");
+  const E = refMasque_("CODEENQU"), D = refMasque_("DATEENQU"), S = refMasque_("STATUTQC"), A = refMasque_("ANOMALIE"),
+        Z = refMasque_("CODEZONE"), DL = refMasque_("DELAIPRE");
+  const V = S + ",\"<>REJETE\"", cols = colonnesMasque_();
+  const L = [], sections = [], pcts = [], dec = [];
+  const jour = function (k, crit) { return "=IF(P_J" + k + "=\"\",\"\",COUNTIFS(" + D + ",P_J" + k + "," + crit + "))"; };
+  const quatre = function (crit) { return [jour(1, crit), jour(2, crit), jour(3, crit), "=COUNTIFS(" + crit + ")"]; };
+  const section = function (t) { L.push([t, "", "", "", ""]); sections.push(L.length); };
+  L.push(["RÉCAPITULATIF PAR JOUR — statistiques de J1, J2, J3 et cumul (temps réel)", "", "", "", ""]);
+  L.push(["Fiches REJETE exclues sauf mention. Dates : onglet PARAMETRES. Rapport rédigé de chaque jour : onglets RAPPORT_J1, RAPPORT_J2, RAPPORT_J3.", "", "", "", ""]);
+  L.push(["INDICATEUR"].concat([1, 2, 3].map(libelleJour_)).concat(["CUMUL"]));
+  section("1. PRODUCTION");
+  L.push(["Fiches valides"].concat(quatre(E + ",\"<>\"," + V))); const rV = L.length;
+  L.push(["Objectif (enquêteurs × objectif/jour)", "=IF(P_J1=\"\",\"\",COUNTA(ENQUETEURS!$A$2:$A)*P_OBJ_JOUR)", "=IF(P_J2=\"\",\"\",COUNTA(ENQUETEURS!$A$2:$A)*P_OBJ_JOUR)",
+    "=IF(P_J3=\"\",\"\",COUNTA(ENQUETEURS!$A$2:$A)*P_OBJ_JOUR)", "=COUNTA(ENQUETEURS!$A$2:$A)*P_OBJ_JOUR*P_NB_JOURS"]);
+  L.push(["% de l'objectif"].concat(["B", "C", "D", "E"].map(function (c) { return "=IF(N(" + c + (rV + 1) + ")=0,\"\"," + c + rV + "/" + c + (rV + 1) + ")"; }))); pcts.push(L.length);
+  L.push(["Enquêteurs ayant produit", "=IF(P_J1=\"\",\"\",COUNTUNIQUEIFS(" + E + "," + D + ",P_J1," + V + "))", "=IF(P_J2=\"\",\"\",COUNTUNIQUEIFS(" + E + "," + D + ",P_J2," + V + "))",
+    "=IF(P_J3=\"\",\"\",COUNTUNIQUEIFS(" + E + "," + D + ",P_J3," + V + "))", "=COUNTUNIQUEIFS(" + E + "," + V + ")"]); const rA = L.length;
+  L.push(["Fiches par enquêteur actif"].concat(["B", "C", "D", "E"].map(function (c) { return "=IF(N(" + c + rA + ")=0,\"\"," + c + rV + "/" + c + rA + ")"; }))); dec.push(L.length);
+  section("2. QUALITÉ");
+  L.push(["Fiches à vérifier"].concat(quatre(S + ",\"A_VERIFIER\""))); const rQ = L.length;
+  L.push(["% à vérifier"].concat(["B", "C", "D", "E"].map(function (c) { return "=IF(N(" + c + rV + ")=0,\"\"," + c + rQ + "/" + c + rV + ")"; }))); pcts.push(L.length);
+  L.push(["Fiches rejetées par le superviseur"].concat(quatre(S + ",\"REJETE\"")));
+  L.push(["Fiches avec délai court"].concat(quatre(A + ",\"*DELAI_COURT*\"," + V)));
+  L.push(["Fiches avec incohérence de réponses"].concat(quatre(A + ",\"*INCOHERENCE*\"," + V)));
+  L.push(["Téléphones en double"].concat(quatre(A + ",\"*TEL_DOUBLON*\"," + V)));
+  L.push(["Minutes moyennes entre deux fiches", "=IF(P_J1=\"\",\"\",IFERROR(AVERAGEIFS(" + DL + "," + D + ",P_J1," + V + "),\"\"))", "=IF(P_J2=\"\",\"\",IFERROR(AVERAGEIFS(" + DL + "," + D + ",P_J2," + V + "),\"\"))",
+    "=IF(P_J3=\"\",\"\",IFERROR(AVERAGEIFS(" + DL + "," + D + ",P_J3," + V + "),\"\"))", "=IFERROR(AVERAGEIFS(" + DL + "," + V + "),\"\")"]); dec.push(L.length);
+  section("3. PAR VILLE (fiches valides)");
+  const rVille = L.length + 1;
+  ZONES.forEach(function (z) { L.push([z.libelle].concat(quatre(Z + "," + z.code + "," + V))); });
+  const part = function (X, code) {
+    return [1, 2, 3].map(function (k) { return "=IF(N(" + lettreColonne_(1 + k) + "$" + rV + ")=0,\"\",COUNTIFS(" + X + "," + code + "," + D + ",P_J" + k + "," + V + ")/" + lettreColonne_(1 + k) + "$" + rV + ")"; })
+      .concat(["=IF(N($E$" + rV + ")=0,\"\",COUNTIFS(" + X + "," + code + "," + V + ")/$E$" + rV + ")"]);
+  };
+  let n = 4;
+  ["VOUSETES"].concat(RAPPORT_VARS).forEach(function (code) {
+    const c = cols.filter(function (x) { return x.code === code; })[0];
+    section(n++ + ". " + c.label + " (% des fiches du jour)");
+    c.valeurs.filter(function (p) { return p[0] < 97; }).forEach(function (p) { L.push([p[1]].concat(part(refMasque_(code), p[0]))); pcts.push(L.length); });
+  });
+  sh.getRange(1, 1, L.length, 5).setValues(L);
+  sh.getRange("A1").setFontSize(14).setFontWeight("bold");
+  sh.getRange("A2").setFontStyle("italic").setFontColor("#666666");
+  styleEntete_(sh.getRange(3, 1, 1, 5));
+  sh.getRangeList(sections.map(function (r) { return "A" + r + ":E" + r; })).setFontWeight("bold").setBackground("#D9E1F2");
+  sh.getRangeList(pcts.map(function (r) { return "B" + r + ":E" + r; })).setNumberFormat("0%");
+  sh.getRangeList(dec.map(function (r) { return "B" + r + ":E" + r; })).setNumberFormat("0.0");
+  sh.getRange(rV, 1, 1, 5).setFontWeight("bold");
+  sh.setColumnWidth(1, 430); [2, 3, 4, 5].forEach(function (c) { sh.setColumnWidth(c, 120); });
+  sh.setFrozenRows(3); sh.setFrozenColumns(1);
+  sh.insertChart(sh.newChart().setChartType(Charts.ChartType.COLUMN)
+    .addRange(sh.getRange(3, 1, 1, 4)).addRange(sh.getRange(rVille, 1, ZONES.length, 4))
+    .setMergeStrategy(Charts.ChartMergeStrategy.MERGE_ROWS).setTransposeRowsAndColumns(true).setNumHeaders(1)
+    .setOption("isStacked", true).setOption("colors", PALETTE.slice(0, 3)).setOption("title", "Fiches valides par jour et par ville")
+    .setOption("legend", { position: "top" }).setOption("width", 520).setOption("height", 300).setPosition(4, 7, 0, 0).build());
+}
+
+// =====================================================================
+// 8 bis. RAPPORT JOURNALIER (onglets RAPPORT_J1, RAPPORT_J2, RAPPORT_J3)
+//    Photographie redigee d'un jour de terrain : synthese, recommandations pour
+//    le lendemain, classement des enqueteurs, cibles, tendances compares aux
+//    jours precedents, camemberts. Genere par rapportJournalier() : a la demande,
+//    et automatiquement chaque soir a 19 h (heure de Douala).
+// =====================================================================
+const RAPPORT_VARS = ["MAACPLSO", "GAACPLSO", "ORIGPRIV", "PRCRICHO", "PRINFREI", "LIEACHPR", "CANAPREF", "PRETACLI"];
+const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const SEUIL_BASE_TENDANCE = 30;       // en dessous, un % du jour n'est pas commente
+const SEUIL_ECART_POINTS = 10;        // ecart jour / jours precedents signale
+const SEUIL_NR_QUESTION = 0.15;       // question sautee par plus de 15 % des fiches du jour
+
+/** Une variable par question (sert au taux de non-reponse). */
+function varsQuestions_() {
+  const out = [];
+  ITEMS.forEach(function (it) {
+    if (it.type === "radio") out.push([it.code, it.q]);
+    else if (it.type === "multi") out.push([it.sousItems[0][0], it.q]);
+    else if (it.type === "grille") it.lignes.forEach(function (l) { out.push([l[0], it.q.split(".")[0] + ". Fourchette de prix — " + l[1]]); });
+  });
+  return out;
+}
+
+/** Base codee lue dans le masque : une fiche = un objet {CODE: valeur, _jour, _heure, _rej}. */
+function lireBase_(ss) {
+  const sh = masque_(ss), codes = colonnesMasque_().map(function (c) { return c.code; });
+  const p0 = CONFIG.PREMIERE_LIGNE_DONNEES, n = sh.getLastRow() - p0 + 1;
+  if (n <= 0) return [];
+  const iD = codes.indexOf("DATEENQU"), iH = codes.indexOf("HEUREENQ");
+  return sh.getRange(p0, 1, n, codes.length).getValues().filter(function (l) { return norm_(l[0]); }).map(function (l) {
+    const o = {};
+    codes.forEach(function (c, i) { o[c] = l[i]; });
+    const d = l[iD], h = l[iH];
+    o._jour = d instanceof Date ? fmtDouala_(d, "yyyy-MM-dd") : String(d).substr(0, 10);
+    o._heure = h instanceof Date ? h.getHours() : (/^\d{1,2}:/.test(String(h)) ? Number(String(h).split(":")[0]) : null);
+    o._rej = o.STATUTQC === "REJETE";
+    return o;
+  });
+}
+
+/**
+ * FONCTION PURE : calcule tout le contenu du rapport d'un jour.
+ * p = { jour:"yyyy-MM-dd", jours:[jours de terrain declares], nbJours, enqueteurs:[{id,nom,zone}],
+ *       objectifJour, seuilDelai, seuilVolume, quotas:{code:[cible, DLA, YDE, BAF]} }
+ */
+function calculerRapport_(base, p) {
+  const NR = CONFIG.CODE_NR, jour = p.jour, obj = p.objectifJour;
+  const arr = function (x) { return Math.round(x); };
+  const pc = function (x) { return x === null ? "—" : Math.round(100 * x) + " %"; };
+  const valides = base.filter(function (o) { return !o._rej; });
+  const J = valides.filter(function (o) { return o._jour === jour; });
+  const AV = valides.filter(function (o) { return o._jour < jour; });
+  const CU = valides.filter(function (o) { return o._jour <= jour; });
+  const rejJ = base.filter(function (o) { return o._rej && o._jour === jour; });
+  const obs = [];
+  CU.forEach(function (o) { if (obs.indexOf(o._jour) < 0) obs.push(o._jour); });
+  const declare = p.jours.indexOf(jour) >= 0;
+  const rang = declare ? p.jours.indexOf(jour) + 1 : obs.length;
+  const restants = declare ? p.jours.filter(function (d) { return d > jour; }).length : Math.max(0, p.nbJours - obs.length);
+
+  const qv = varsQuestions_();
+  const txNR = function (o) { return qv.filter(function (q) { return o[q[0]] === NR; }).length / qv.length; };
+  const anomalies = function (o) { return String(o.ANOMALIE || "").split(" | ").filter(function (x) { return x && x !== "ZONE_ENQ_NON_PARAMETREE"; }); };
+  const a = function (o, mot) { return String(o.ANOMALIE || "").indexOf(mot) >= 0; };
+  const moy = function (t) { return t.length ? t.reduce(function (s, x) { return s + x; }, 0) / t.length : null; };
+
+  // ---------- Classement des enqueteurs ----------
+  const liste = p.enqueteurs.slice(), connus = {};
+  liste.forEach(function (e) { connus[e.id] = true; });
+  J.concat(rejJ).forEach(function (o) { const id = String(o.CODEENQU || ""); if (id && !connus[id]) { connus[id] = true; liste.push({ id: id, nom: "(hors liste)", zone: "" }); } });
+  const classement = liste.map(function (e) {
+    const f = J.filter(function (o) { return o.CODEENQU === e.id; });
+    const rj = rejJ.filter(function (o) { return o.CODEENQU === e.id; }).length;
+    const n = f.length, tot = n + rj;
+    const pb = f.filter(function (o) { return o.STATUTQC === "A_VERIFIER" && anomalies(o).length; }).length;
+    const dc = f.filter(function (o) { return a(o, "DELAI_COURT"); }).length;
+    const nr = moy(f.map(txNR));
+    const prod = obj > 0 ? Math.min(1, n / obj) : 0;
+    const score = tot ? arr(50 * prod + 30 * (1 - (pb + rj) / tot) + 20 * (1 - Math.min(1, (nr || 0) / 0.20))) : 0;
+    let avis = score >= 80 ? "Très bon" : score >= 65 ? "Bon" : score >= 50 ? "À suivre" : "Insuffisant";
+    if (!tot) avis = "Aucune fiche";
+    else if (n > p.seuilVolume) avis = "À contrôler (volume suspect)";
+    return { id: e.id, nom: e.nom, zone: e.zone, n: n, pObj: obj > 0 ? n / obj : null, cumul: CU.filter(function (o) { return o.CODEENQU === e.id; }).length,
+             pb: pb, rej: rj, dc: dc, nr: nr, tel: f.filter(function (o) { return a(o, "TEL_DOUBLON"); }).length, score: score, avis: avis };
+  }).sort(function (x, y) { return y.score - x.score || y.n - x.n || (x.id < y.id ? -1 : 1); });
+  classement.forEach(function (c, i) { c.rang = i + 1; });
+
+  // ---------- Villes ----------
+  const villes = ZONES.map(function (z, k) {
+    const quota = Object.keys(p.quotas).reduce(function (s, c) { return s + p.quotas[c][1 + k]; }, 0);
+    const nJ = J.filter(function (o) { return o.CODEZONE === z.code; }).length, cu = CU.filter(function (o) { return o.CODEZONE === z.code; }).length;
+    const nEnq = p.enqueteurs.filter(function (e) { return e.zone === z.id; }).length, reste = Math.max(0, quota - cu);
+    const requis = reste && restants && nEnq ? reste / nEnq / restants : null;
+    const etat = !reste ? "Quota atteint" : !restants ? "Quota non atteint : " + reste + " fiches manquantes" : !nEnq ? "Aucun enquêteur affecté" :
+      requis <= obj ? "Atteignable" : requis <= p.seuilVolume ? "Tendu" : "Hors d'atteinte au rythme autorisé";
+    return { z: z, nJ: nJ, cumul: cu, quota: quota, reste: reste, nEnq: nEnq, requis: requis, etat: etat };
+  });
+
+  // ---------- Cibles (Q1) ----------
+  const codesC = Object.keys(p.quotas).map(Number), cellules = [];
+  const cibles = codesC.map(function (c) {
+    const nJ = J.filter(function (o) { return o.VOUSETES === c; }).length, cu = CU.filter(function (o) { return o.VOUSETES === c; }).length;
+    const quota = p.quotas[c][1] + p.quotas[c][2] + p.quotas[c][3];
+    ZONES.forEach(function (z, k) {
+      const q = p.quotas[c][1 + k], r = CU.filter(function (o) { return o.VOUSETES === c && o.CODEZONE === z.code; }).length;
+      cellules.push({ cible: p.quotas[c][0], ville: z.libelle, quota: q, fait: r, reste: Math.max(0, q - r), taux: q ? r / q : null });
+    });
+    return { lib: p.quotas[c][0], nJ: nJ, pJ: J.length ? nJ / J.length : null, cumul: cu, quota: quota, pQ: quota ? cu / quota : null, reste: Math.max(0, quota - cu) };
+  });
+
+  // ---------- Tendances : jour compare aux jours precedents ----------
+  const cols = colonnesMasque_(), signaux = [];
+  const tendances = RAPPORT_VARS.map(function (code) {
+    const c = cols.filter(function (x) { return x.code === code; })[0];
+    const mods = c.valeurs.filter(function (m) { return m[0] < 97; });
+    const bJ = J.filter(function (o) { return typeof o[code] === "number" && o[code] < 97; }), bA = AV.filter(function (o) { return typeof o[code] === "number" && o[code] < 97; });
+    const fiable = bJ.length >= SEUIL_BASE_TENDANCE && bA.length >= SEUIL_BASE_TENDANCE;
+    const rows = mods.map(function (m) {
+      const nJ = bJ.filter(function (o) { return o[code] === m[0]; }).length, nA = bA.filter(function (o) { return o[code] === m[0]; }).length;
+      const pJ = bJ.length ? nJ / bJ.length : null, pA = bA.length ? nA / bA.length : null;
+      const ec = pJ !== null && pA !== null ? 100 * (pJ - pA) : null;
+      let sig = "";
+      if (fiable && Math.abs(ec) >= SEUIL_ECART_POINTS) {
+        sig = (ec > 0 ? "▲ +" : "▼ ") + arr(ec) + " pts";
+        signaux.push(c.label.split(".")[0] + " « " + m[1] + " » : " + pc(pJ) + " aujourd'hui contre " + pc(pA) + " les jours précédents (" + (ec > 0 ? "+" : "") + arr(ec) + " points)");
+      }
+      return { lib: m[1], nJ: nJ, pJ: pJ, pA: pA, ec: ec, sig: sig };
+    });
+    const tete = rows.slice().sort(function (x, y) { return y.nJ - x.nJ; })[0];
+    return { code: code, label: c.label, baseJ: bJ.length, baseA: bA.length, fiable: fiable, rows: rows, tete: tete && tete.nJ ? tete : null };
+  });
+
+  // ---------- Non-reponse par question, rythme horaire ----------
+  const nonRep = qv.map(function (q) { return { q: q[1], n: J.filter(function (o) { return o[q[0]] === NR; }).length }; })
+    .map(function (x) { x.tx = J.length ? x.n / J.length : null; return x; })
+    .filter(function (x) { return x.n > 0; }).sort(function (x, y) { return y.n - x.n; }).slice(0, 10);
+  const heures = [];
+  const hs = J.map(function (o) { return o._heure; }).filter(function (h) { return h !== null && h !== undefined; });
+  if (hs.length) for (let h = Math.min.apply(null, hs); h <= Math.max.apply(null, hs); h++) heures.push([h + " h", hs.filter(function (x) { return x === h; }).length]);
+
+  // ---------- Synthese ----------
+  const aVerif = J.filter(function (o) { return o.STATUTQC === "A_VERIFIER"; }).length;
+  const actifs = classement.filter(function (c) { return c.n > 0; }).length;
+  const objJour = p.enqueteurs.length * obj, quotaTot = villes.reduce(function (s, v) { return s + v.quota; }, 0);
+  const cuTot = CU.length, nrJour = moy(J.map(txNR));
+  const delais = J.map(function (o) { return o.DELAIPRE; }).filter(function (x) { return typeof x === "number"; }).sort(function (x, y) { return x - y; });
+  const synthese = [
+    ["Fiches valides du jour", J.length, objJour ? "objectif " + objJour + " (" + p.enqueteurs.length + " enquêteurs × " + obj + ") : " + pc(J.length / objJour) : ""],
+    ["Cumul depuis le début du terrain", cuTot, quotaTot ? "quota total " + quotaTot + " : " + pc(cuTot / quotaTot) + " ; reste " + Math.max(0, quotaTot - cuTot) : ""],
+    ["Enquêteurs ayant produit", actifs, "sur " + p.enqueteurs.length + " inscrits" + (actifs ? " ; " + (J.length / actifs).toFixed(1) + " fiches par enquêteur actif" : "")],
+    ["Fiches à vérifier", aVerif, J.length ? pc(aVerif / J.length) + " des fiches du jour" : ""],
+    ["Fiches rejetées par le superviseur", rejJ.length, ""],
+    ["Taux moyen de questions sans réponse", nrJour === null ? "—" : pc(nrJour), "part des " + qv.length + " questions codées laissées vides (code 99)"],
+    ["Minutes médianes entre deux fiches", delais.length ? delais[Math.floor(delais.length / 2)] : "—", "seuil d'alerte : " + p.seuilDelai + " min"],
+    ["Jours de terrain restants", restants, declare ? "d'après les dates de l'onglet PARAMETRES" : "estimation : ce jour n'est pas déclaré dans PARAMETRES"]
+  ];
+
+  // ---------- Recommandations pour le jour suivant ----------
+  const R = [], noms = function (t) { return t.map(function (c) { return c.id + (c.nom && c.nom !== "(hors liste)" ? " (" + c.nom + ")" : ""); }).join(", "); };
+  if (!J.length) R.push(["Production", "Aucune fiche valide ce jour : vérifier que les enquêteurs utilisent bien leur lien personnel et que le formulaire accepte les réponses."]);
+  if (!declare) R.push(["Paramétrage", "Ce jour n'est pas déclaré dans l'onglet PARAMETRES (DATE_J1 à J3) : les colonnes J1/J2/J3 des autres tableaux l'ignorent. Saisir les dates réelles du terrain."]);
+  villes.forEach(function (v) {
+    if (!v.reste) R.push(["Production", v.z.libelle + " : quota atteint (" + v.cumul + "/" + v.quota + "). Arrêter la collecte ou réaffecter les enquêteurs vers une ville en retard."]);
+    else if (!restants) R.push(["Production", v.z.libelle + " : il manque " + v.reste + " fiches (" + v.cumul + "/" + v.quota + ") et aucun jour de terrain ne reste. Prévoir une journée de rattrapage : environ " +
+      Math.ceil(v.reste / Math.max(1, v.nEnq * obj)) + " jour(s) avec " + v.nEnq + " enquêteur(s)."]);
+    else if (v.requis !== null) R.push(["Production", v.z.libelle + " : reste " + v.reste + " fiches, soit " + v.requis.toFixed(1) + " par enquêteur et par jour sur " + restants + " jour(s) (" + v.etat.toLowerCase() + ")." +
+      (v.requis > obj ? " Renforcer l'équipe ou ajouter un jour : au-delà de " + obj + " fiches/jour, la qualité des entretiens baisse." : "")]);
+    else R.push(["Production", v.z.libelle + " : " + v.etat.toLowerCase() + " (reste " + v.reste + " fiches)."]);
+  });
+  const retard = cellules.filter(function (c) { return c.reste > 0 && c.quota; }).sort(function (x, y) { return x.taux - y.taux || y.reste - x.reste; }).slice(0, 5);
+  if (retard.length) R.push(["Cibles", "À rechercher en priorité demain : " + retard.map(function (c) { return c.cible + " à " + c.ville + " (" + c.fait + "/" + c.quota + ")"; }).join(" ; ") + "."]);
+  const pleines = cellules.filter(function (c) { return c.quota && c.fait >= c.quota; });
+  if (pleines.length) R.push(["Cibles", "Quota atteint, ne plus interroger : " + pleines.map(function (c) { return c.cible + " à " + c.ville + " (" + c.fait + "/" + c.quota + ")"; }).join(" ; ") + "."]);
+  const grp = function (av) { return classement.filter(function (c) { return c.avis === av; }); };
+  if (grp("Très bon").length) R.push(["Enquêteurs", "Très bon travail : " + noms(grp("Très bon")) + ". À citer en exemple au briefing ; leur confier les cibles difficiles."]);
+  if (grp("À suivre").length) R.push(["Enquêteurs", "À suivre de près : " + noms(grp("À suivre")) + ". Faire le point avec chacun avant le départ sur le terrain."]);
+  if (grp("Insuffisant").length) R.push(["Enquêteurs", "Travail insuffisant : " + noms(grp("Insuffisant")) + ". Entretien individuel, puis accompagnement en binôme sur les premières fiches."]);
+  if (grp("Aucune fiche").length) R.push(["Enquêteurs", "Aucune fiche ce jour : " + noms(grp("Aucune fiche")) + ". Vérifier la présence, le lien utilisé et la connexion."]);
+  if (grp("À contrôler (volume suspect)").length) R.push(["Enquêteurs", "Volume anormalement élevé (plus de " + p.seuilVolume + " fiches) : " + noms(grp("À contrôler (volume suspect)")) + ". Rappeler 5 enquêtés par téléphone avant de valider leurs fiches."]);
+  classement.filter(function (c) { return c.dc >= 3 || (c.n >= 5 && c.dc / c.n >= 0.2); }).forEach(function (c) {
+    R.push(["Contrôle", c.id + " : " + c.dc + " fiche(s) à moins de " + p.seuilDelai + " minutes de la précédente. Rappeler au moins 3 de ces enquêtés par téléphone pour confirmer l'entretien."]); });
+  classement.filter(function (c) { return c.n >= 5 && c.nr !== null && c.nr >= SEUIL_NR_QUESTION; }).forEach(function (c) {
+    R.push(["Qualité", c.id + " laisse " + pc(c.nr) + " des questions sans réponse. Lui rappeler de poser toutes les questions jusqu'à Q41."]); });
+  const sautees = nonRep.filter(function (x) { return x.tx >= SEUIL_NR_QUESTION; }).slice(0, 5);
+  if (sautees.length) R.push(["Qualité", "Questions les plus sautées : " + sautees.map(function (x) { return x.q.split(".")[0] + " (" + pc(x.tx) + ")"; }).join(", ") + ". Les reformuler au briefing ; envisager de les rendre obligatoires dans le formulaire."]);
+  if (aVerif) R.push(["Contrôle", aVerif + " fiche(s) à vérifier : le superviseur les traite ce soir dans MASQUE_DEPOUILLEMENT (colonne STATUTQC : OK ou REJETE)."]);
+  const tel = J.filter(function (o) { return a(o, "TEL_DOUBLON"); }).length;
+  if (tel) R.push(["Contrôle", tel + " fiche(s) avec un téléphone déjà enregistré : la même personne a peut-être été interrogée deux fois."]);
+  const sansZone = classement.filter(function (c) { return !c.zone && c.nom !== "(hors liste)"; });
+  if (sansZone.length) R.push(["Paramétrage", "Zone non saisie dans l'onglet ENQUETEURS pour " + noms(sansZone) + " : la saisir puis exécuter actualiser()."]);
+  if (classement.some(function (c) { return c.nom === "(hors liste)"; })) R.push(["Paramétrage", "Des fiches portent un identifiant absent de l'onglet ENQUETEURS : " + noms(classement.filter(function (c) { return c.nom === "(hors liste)"; })) + "."]);
+  signaux.slice(0, 6).forEach(function (s) { R.push(["Tendance", s + ". Vérifier s'il s'agit d'un effet de cible ou de quartier avant de conclure."]); });
+  if (J.length && J.length < SEUIL_BASE_TENDANCE) R.push(["Lecture", "Moins de " + SEUIL_BASE_TENDANCE + " fiches ce jour : les pourcentages du jour sont indicatifs, ne pas en tirer de conclusion."]);
+
+  return { jour: jour, rang: rang, declare: declare, restants: restants, nJ: J.length, synthese: synthese, recos: R, villes: villes, classement: classement,
+           cibles: cibles, tendances: tendances, nonRep: nonRep, heures: heures, objectif: obj };
+}
+
+// ---------- Ecriture du rapport dans un onglet ----------
+function Rap_() {
+  this.L = []; this.ch = [];
+  this.st = { titre: [], section: [], tete: [], pct: [], gras: [], note: [], vert: [], jaune: [], rouge: [], bleu: [] };
+}
+Rap_.prototype.ligne = function (a, style) { this.L.push(a); if (style) this.st[style].push([this.L.length, 1, 1, style === "section" ? 13 : Math.max(a.length, 1)]); return this.L.length; };
+Rap_.prototype.marque = function (style, r, c, nr, nc) { this.st[style].push([r, c, nr || 1, nc || 1]); };
+Rap_.prototype.table = function (entete, lignes, pcts) {
+  const rh = this.ligne(entete, "tete"), self = this;
+  lignes.forEach(function (l) { self.L.push(l); });
+  if (lignes.length) (pcts || []).forEach(function (c) { self.st.pct.push([rh + 1, c, lignes.length, 1]); });
+  return rh;
+};
+Rap_.prototype.jusqua = function (r) { while (this.L.length < r) this.L.push([""]); };
+Rap_.prototype.vide = function () { this.L.push([""]); };
+
+function ecrireRapport_(ss, nom, R, etiquette) {
+  const S = new Rap_(), JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+  const d = R.jour.split("-"), jsem = JOURS[new Date(Date.UTC(+d[0], +d[1] - 1, +d[2])).getUTCDay()];
+  const HG = 15;                                            // lignes reservees a un bloc accompagne d'un graphique
+  S.ligne(["RAPPORT JOURNALIER — " + etiquette + " — " + jsem + " " + d[2] + "/" + d[1] + "/" + d[0]], "titre");
+  S.ligne(["Généré le " + fmtDouala_(new Date(), "dd/MM/yyyy à HH:mm") + ". Fiches REJETE exclues. Photographie figée : relancer rapportJournalier() pour l'actualiser."], "note");
+  S.vide();
+
+  S.ligne(["1. SYNTHÈSE DU JOUR"], "section");
+  S.table(["Indicateur", "Valeur", "Lecture"], R.synthese);
+  S.vide();
+
+  S.ligne(["2. RECOMMANDATIONS POUR LE JOUR SUIVANT"], "section");
+  if (R.recos.length) { const r0 = S.table(["Thème", "Action recommandée"], R.recos); S.marque("gras", r0 + 1, 1, R.recos.length, 1); }
+  else S.ligne(["Aucune action particulière : production et qualité conformes."]);
+  S.vide();
+
+  S.ligne(["3. PRODUCTION PAR VILLE"], "section");
+  S.table(["Ville", "Fiches du jour", "Cumul", "Quota", "% du quota", "Reste", "Enquêteurs", "Requis / enquêteur / jour", "Situation"],
+    R.villes.map(function (v) { return [v.z.libelle, v.nJ, v.cumul, v.quota, v.quota ? v.cumul / v.quota : "", v.reste, v.nEnq, v.requis === null ? "—" : Math.round(v.requis * 10) / 10, v.etat]; }), [5]);
+  S.vide();
+
+  S.ligne(["4. CLASSEMENT DES ENQUÊTEURS (du meilleur au moins bon, sur le jour)"], "section");
+  const rc = S.table(["Rang", "Enquêteur", "Fiches du jour", "Nom", "Zone", "% objectif", "Cumul", "À vérifier", "Rejetées", "Délais courts", "Tél. en double", "% sans réponse", "Score /100", "Appréciation"],
+    R.classement.map(function (c) { return [c.rang, c.id, c.n, c.nom, c.zone || "(à saisir)", c.pObj === null ? "" : c.pObj, c.cumul, c.pb, c.rej, c.dc, c.tel, c.nr === null ? "" : c.nr, c.score, c.avis]; }), [6, 12]);
+  R.classement.forEach(function (c, i) {
+    S.marque(c.avis === "Très bon" || c.avis === "Bon" ? "vert" : c.avis === "À suivre" ? "jaune" : "rouge", rc + 1 + i, 14);
+  });
+  if (R.classement.length) S.ch.push({ type: "BAR", titre: "Fiches du jour par enquêteur (objectif : " + R.objectif + ")", r: rc, c: 2, nr: R.classement.length + 1, nc: 2, pos: rc, h: Math.max(260, 26 * R.classement.length + 80) });
+  S.ligne(["Score = 50 points de production (fiches ÷ objectif, plafonné) + 30 points de fiabilité (part des fiches sans anomalie imputable ni rejet) + 20 points de complétude (0 point à partir de 20 % de questions sans réponse)."], "note");
+  S.ligne(["Très bon ≥ 80 · Bon ≥ 65 · À suivre ≥ 50 · Insuffisant < 50. L'anomalie « zone non paramétrée » n'est pas imputée à l'enquêteur. Le score classe, il ne prouve rien : un bon score n'exclut pas une fiche inventée, d'où les rappels téléphoniques."], "note");
+  S.jusqua(rc + Math.max(HG, Math.ceil((26 * R.classement.length + 80) / 21) + 1));
+  S.vide();
+
+  S.ligne(["5. CIBLES INTERROGÉES (Q1)"], "section");
+  const rq = S.table(["Cible", "Fiches du jour", "% du jour", "Cumul", "Quota", "% du quota", "Reste"],
+    R.cibles.map(function (c) { return [c.lib, c.nJ, c.pJ === null ? "" : c.pJ, c.cumul, c.quota, c.pQ === null ? "" : c.pQ, c.reste]; }), [3, 6]);
+  if (R.nJ) S.ch.push({ type: "PIE", titre: "Répartition des fiches du jour par cible", r: rq, c: 1, nr: R.cibles.length + 1, nc: 2, pos: rq });
+  S.jusqua(rq + HG); S.vide();
+
+  S.ligne(["6. TENDANCES DU JOUR, COMPARÉES AUX JOURS PRÉCÉDENTS"], "section");
+  S.ligne(["▲ ▼ = écart d'au moins " + SEUIL_ECART_POINTS + " points avec les jours précédents, signalé seulement si chaque base compte au moins " + SEUIL_BASE_TENDANCE + " fiches. Suivi J1 | J2 | J3 côte à côte : onglet RECAP_JOURS."], "note");
+  R.tendances.forEach(function (t) {
+    S.ligne([t.label + " — base du jour : " + t.baseJ + (t.baseA ? " ; jours précédents : " + t.baseA : " ; pas de jour précédent") +
+      (t.tete ? " — en tête : " + t.tete.lib + " (" + Math.round(100 * t.tete.pJ) + " %)" : "")], "bleu");
+    const rt = S.table(["Modalité", "Fiches du jour", "% du jour", "% jours précédents", "Écart (points)", "Signal"],
+      t.rows.map(function (x) { return [x.lib, x.nJ, x.pJ === null ? "" : x.pJ, x.pA === null ? "" : x.pA, x.ec === null ? "" : Math.round(x.ec), x.sig]; }), [3, 4]);
+    t.rows.forEach(function (x, i) { if (x.sig) S.marque(x.ec > 0 ? "vert" : "rouge", rt + 1 + i, 6); });
+    if (t.baseJ) S.ch.push({ type: t.rows.length <= 6 ? "PIE" : "BAR", titre: t.label.replace(/^Q\d+\.\s*/, "") + " — jour", r: rt, c: 1, nr: t.rows.length + 1, nc: 2, pos: rt - 1 });
+    S.jusqua(rt - 1 + HG); S.vide();
+  });
+
+  S.ligne(["7. QUESTIONS LAISSÉES SANS RÉPONSE (10 premières)"], "section");
+  if (R.nonRep.length) {
+    const rn = S.table(["Question", "Fiches sans réponse", "% des fiches du jour"], R.nonRep.map(function (x) { return [x.q, x.n, x.tx === null ? "" : x.tx]; }), [3]);
+    R.nonRep.forEach(function (x, i) { if (x.tx >= SEUIL_NR_QUESTION) S.marque("rouge", rn + 1 + i, 3); });
+  } else S.ligne(["Aucune question sautée ce jour."]);
+  S.vide();
+
+  S.ligne(["8. RYTHME DE COLLECTE PAR HEURE"], "section");
+  if (R.heures.length) {
+    const rh = S.table(["Heure", "Fiches"], R.heures);
+    S.ch.push({ type: "COLUMN", titre: "Fiches soumises par heure", r: rh, c: 1, nr: R.heures.length + 1, nc: 2, pos: rh });
+    S.jusqua(rh + HG);
+  } else S.ligne(["Aucune fiche ce jour."]);
+
+  // ----- ecriture -----
+  let sh = ss.getSheetByName(nom);
+  if (sh) { sh.getCharts().forEach(function (c) { sh.removeChart(c); }); sh.clear(); }
+  else sh = ss.insertSheet(nom, ss.getSheets().length);
+  let W = 1;
+  S.L.forEach(function (l) { if (l.length > W) W = l.length; });
+  const data = S.L.map(function (l) { const x = l.slice(); while (x.length < W) x.push(""); return x; });
+  if (sh.getMaxColumns() < W + 9) sh.insertColumnsAfter(sh.getMaxColumns(), W + 9 - sh.getMaxColumns());
+  if (sh.getMaxRows() < data.length + 20) sh.insertRowsAfter(sh.getMaxRows(), data.length + 20 - sh.getMaxRows());
+  sh.getRange(1, 1, data.length, W).setValues(data).setFontFamily("Arial").setFontSize(10).setVerticalAlignment("middle");
+  const a1 = function (t) { return lettreColonne_(t[1]) + t[0] + ":" + lettreColonne_(t[1] + t[3] - 1) + (t[0] + t[2] - 1); };
+  const st = S.st, appl = function (k, f) { if (st[k].length) f(sh.getRangeList(st[k].map(a1))); };
+  appl("titre", function (r) { r.setFontSize(15).setFontWeight("bold").setFontColor("#1F4E78"); });
+  appl("section", function (r) { r.setFontSize(11).setFontWeight("bold").setBackground("#1F4E78").setFontColor("#FFFFFF"); });
+  appl("tete", function (r) { r.setFontWeight("bold").setBackground("#D9E1F2").setWrap(true); });
+  appl("bleu", function (r) { r.setFontWeight("bold").setFontColor("#1F4E78"); });
+  appl("gras", function (r) { r.setFontWeight("bold"); });
+  appl("note", function (r) { r.setFontStyle("italic").setFontColor("#595959").setFontSize(9); });
+  appl("pct", function (r) { r.setNumberFormat("0%"); });
+  appl("vert", function (r) { r.setBackground("#D9EAD3").setFontWeight("bold"); });
+  appl("jaune", function (r) { r.setBackground("#FFF2CC").setFontWeight("bold"); });
+  appl("rouge", function (r) { r.setBackground("#F4CCCC").setFontWeight("bold"); });
+  sh.setColumnWidth(1, 300);
+  for (let c = 2; c <= W; c++) sh.setColumnWidth(c, c === 4 ? 150 : c === W ? 190 : 105);
+  S.ch.forEach(function (g) {
+    let b = sh.newChart().setChartType(Charts.ChartType[g.type]).addRange(sh.getRange(g.r, g.c, g.nr, g.nc)).setNumHeaders(1)
+      .setOption("title", g.titre).setOption("width", 460).setOption("height", g.h || 290).setOption("colors", g.type === "PIE" ? PALETTE : [PALETTE[0]])
+      .setPosition(g.pos, W + 2, 0, 0);
+    if (g.type === "PIE") b = b.setOption("pieHole", 0.45).setOption("pieSliceText", "percentage").setOption("legend", { position: "right" });
+    else b = b.setOption("legend", { position: "none" });
+    sh.insertChart(b.build());
+  });
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+/**
+ * RAPPORT JOURNALIER : un onglet par jour de terrain (RAPPORT_J1, RAPPORT_J2, RAPPORT_J3).
+ * A lancer a tout moment ; se lance aussi tout seul chaque soir a 19 h.
+ * Si les dates J1 a J3 ne sont pas saisies dans PARAMETRES, le rapport porte sur les
+ * derniers jours reellement observes (onglets RAPPORT_jj-mm).
+ */
+function rapportJournalier() {
+  try { synchroniser_("RAPPORT", null, true, false); } catch (e) { Logger.log("Synchronisation préalable impossible : " + e.message); }
+  const ss = classeur_(), base = lireBase_(ss);
+  const val = function (nom, defaut) { try { const v = Number(ss.getRangeByName(nom).getValue()); return v > 0 ? v : defaut; } catch (e) { return defaut; } };
+  const aujourdhui = fmtDouala_(new Date(), "yyyy-MM-dd"), declares = [];
+  [1, 2, 3].forEach(function (k) {
+    try { const v = ss.getRangeByName("P_J" + k).getValue(); if (v instanceof Date) declares.push({ etiquette: "JOUR " + k, nom: "RAPPORT_J" + k, jour: fmtDouala_(v, "yyyy-MM-dd") }); } catch (e) { /* date absente */ }
+  });
+  const jours = declares.map(function (x) { return x.jour; }).sort();
+  const observes = [];
+  base.forEach(function (o) { if (!o._rej && observes.indexOf(o._jour) < 0) observes.push(o._jour); });
+  observes.sort();
+  const hors = function (j) { const p = j.split("-"); return { etiquette: "jour hors calendrier", nom: "RAPPORT_" + p[2] + "-" + p[1], jour: j }; };
+  let aFaire = declares.filter(function (x) { return x.jour <= aujourdhui; });
+  if (!declares.length) aFaire = observes.slice(-3).map(hors);
+  else if (observes.indexOf(aujourdhui) >= 0 && jours.indexOf(aujourdhui) < 0) aFaire.push(hors(aujourdhui));
+  const p = { jours: jours, nbJours: val("P_NB_JOURS", CONFIG.NB_JOURS), enqueteurs: listeEnqueteurs_(ss), objectifJour: val("P_OBJ_JOUR", CONFIG.OBJECTIF_JOUR),
+              seuilDelai: seuilDelai_(ss), seuilVolume: val("P_SEUIL_VOLUME", CONFIG.SEUIL_VOLUME_JOUR), quotas: lireQuotas_(ss) };
+  const faits = aFaire.map(function (x) {
+    const R = calculerRapport_(base, Object.assign({ jour: x.jour }, p));
+    ecrireRapport_(ss, x.nom, R, x.etiquette);
+    return x.nom + " (" + R.nJ + " fiches, " + R.recos.length + " recommandations)";
+  });
+  Logger.log(faits.length ? "Rapports générés : " + faits.join(" ; ") : "Aucun jour de terrain à rapporter : saisir DATE_J1 à J3 dans PARAMETRES.");
+  return faits;
+}
+
+/**
+ * >>> A LANCER UNE FOIS APRES AVOIR COLLE LA V6 <<<
+ * Reconstruit les tableaux de suivi avec les colonnes J1 / J2 / J3, cree RECAP_JOURS,
+ * genere les rapports journaliers et programme le rapport automatique de 19 h.
+ * Ne touche ni au formulaire, ni aux fiches du masque, ni aux quotas modifies.
+ */
+function mettreAJourV6() {
+  const form = formulaire_(), ss = classeur_();
+  installerDeclencheurs_(form);
+  synchroniser_("MAJ_V6", null, true, false);
+  creerTableauDeBord_(ss);
+  creerTriAPlat_(ss);
+  creerSuiviCibles_(ss);
+  creerRecapJours_(ss);
+  const faits = rapportJournalier();
+  Logger.log("Tableaux par jour créés : TABLEAU_DE_BORD, TRI_A_PLAT, SUIVI_CIBLES, RECAP_JOURS.");
+  Logger.log("Rapports : " + (faits.join(" ; ") || "aucun"));
+  Logger.log("Synchronisation : " + sante());
+  Logger.log("Classeur : " + ss.getUrl());
+}
+
+// =====================================================================
+// 9. EXPORT SPSS (format identique a la V3 : scripts SPSS inchanges)
+// =====================================================================
+function exporterPourSPSS() {
+  synchroniser_("EXPORT", null, true, false);          // garantit un masque complet et sans doublon avant l'export
+  const ss = classeur_();
+  const sh = ss.getSheetByName("MASQUE_DEPOUILLEMENT");
+  const cols = colonnesMasque_(), p0 = CONFIG.PREMIERE_LIGNE_DONNEES, n = sh.getLastRow() - p0 + 1;
+  const iDate = cols.map(function (c) { return c.code; }).indexOf("DATEENQU"), iStat = cols.length - 1;
+  let lignes = n > 0 ? sh.getRange(p0, 1, n, cols.length).getValues() : [];
+  lignes = lignes.filter(function (l) { return l[0] && l[iStat] !== "REJETE"; }).map(function (l) {
+    if (l[iDate] instanceof Date) l[iDate] = Utilities.formatDate(l[iDate], CONFIG.FUSEAU, "yyyy-MM-dd");
+    if (l[iDate + 1] instanceof Date) l[iDate + 1] = Utilities.formatDate(l[iDate + 1], CONFIG.FUSEAU, "HH:mm");
+    return l.map(function (x) { return typeof x === "string" ? x.replace(/[\r\n]+/g, " ") : x; });
+  });
+  let ex = ss.getSheetByName("EXPORT_SPSS");
+  if (ex) ex.clear(); else ex = ss.insertSheet("EXPORT_SPSS", ss.getSheets().length);
+  const donnees = [cols.map(function (c) { return c.code; })].concat(lignes);
+  if (ex.getMaxColumns() < cols.length) ex.insertColumnsAfter(ex.getMaxColumns(), cols.length - ex.getMaxColumns());
+  if (ex.getMaxRows() < donnees.length) ex.insertRowsAfter(ex.getMaxRows(), donnees.length - ex.getMaxRows());
+  ex.getRange(1, 1, donnees.length, cols.length).setNumberFormat("@").setValues(donnees.map(function (l) {
+    return l.map(function (x) { return x === null || x === undefined ? "" : String(x); });
+  }));
+  ss.setActiveSheet(ex);
+  Logger.log(lignes.length + " fiche(s) exportée(s). Onglet EXPORT_SPSS > Fichier > Télécharger > .csv, renommer en EXPORT_SPSS.csv.");
+}
+
+// Export pour les tests hors Google (sans effet dans Apps Script)
+if (typeof module !== "undefined") module.exports = { ITEMS: ITEMS, structurer_: structurer_, coderFiche_: coderFiche_,
+  construireLigne_: construireLigne_, colonnesMasque_: colonnesMasque_, planSync_: planSync_, numSeq_: numSeq_, calculerRapport_: calculerRapport_, varsQuestions_: varsQuestions_, cle_: cle_, numeroQuestion_: numeroQuestion_, champIdent_: champIdent_ };

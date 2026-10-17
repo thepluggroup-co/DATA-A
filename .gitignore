@@ -1,0 +1,20 @@
+# Données personnelles réelles : jamais dans Git
+reference/prive/
+*.sav
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Environnement
+.env
+
+# Sorties générées (reproductibles par la ligne de commande)
+sorties/
