@@ -33,7 +33,10 @@ class DecisionQC:
 
 
 def recoder(dico: Dictionnaire, reponses: list[ReponseBrute], params: ParametresCodification,
-            numeros_connus: dict[str, int] | None = None, decisions: dict[str, DecisionQC] | None = None) -> list[FicheCodee]:
+            numeros_connus: dict[str, int] | None = None, decisions: dict[str, DecisionQC] | None = None,
+            sequences_prises: dict[str, int] | None = None) -> list[FicheCodee]:
+    """`sequences_prises` : plus grand N° déjà attribué par enquêteur (registre), y compris pour des réponses
+    exclues depuis : une nouvelle fiche ne reprend jamais un N° consommé."""
     numeros_connus = numeros_connus or {}
     decisions = decisions or {}
     vues: set[str] = set()
@@ -44,7 +47,7 @@ def recoder(dico: Dictionnaire, reponses: list[ReponseBrute], params: Parametres
             uniques.append(r)
     uniques.sort(key=lambda r: r.horodatage)
 
-    etat = EtatCodification()
+    etat = EtatCodification(sequence=dict(sequences_prises or {}))
     reserves: dict[str, int] = {}
     pris: set[tuple[str, int]] = set()
     for r in uniques:
