@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { obtenir, type Analyse, type Envoi } from "./api";
+import { analyseDemo } from "./demo";
 
 export const pct = (x: unknown, decimales = 0): string =>
   typeof x === "number" && Number.isFinite(x) ? `${(x * 100).toFixed(decimales).replace(".", ",")} %` : "—";
@@ -69,11 +70,11 @@ const Contexte = createContext<Session | null>(null);
 
 export function FournisseurSession({ children, projetInitial }: { children: ReactNode; projetInitial: string }) {
   const [projet, setProjetBrut] = useState(projetInitial);
-  const [analyse, setAnalyse] = useState<Analyse | null>(null);
+  const [analyse, setAnalyse] = useState<Analyse | null>(analyseDemo);
   const [envoi, setEnvoi] = useState<Envoi | null>(null);
   const setProjet = (p: string) => {
     setProjetBrut(p);
-    setAnalyse(null);
+    setAnalyse(analyseDemo());
     setEnvoi(null);
   };
   const memoriser = (a: Analyse | null, e: Envoi | null) => {

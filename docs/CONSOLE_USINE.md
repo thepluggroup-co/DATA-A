@@ -28,3 +28,6 @@ Le classeur de réponses (export `.xlsx` de Google Sheets) est envoyé à chaque
 
 ## Tests
 `backend/tests/test_api.py` utilise un classeur **fictif** (`tests/tableur_fictif.py`, valeurs tirées au hasard) : ses chiffres ne décrivent pas l'étude réelle.
+
+## Démo sans serveur
+`npm run build:demo` (dans `frontend/`) compile la même interface avec des réponses d'API enregistrées dans `src/demo-donnees.json` (hors Git ; à enregistrer depuis un serveur lancé, avec le classeur fictif des tests). Bandeau « Démonstration » sur chaque écran, envoi de classeur et téléchargements désactivés. Le build normal n'embarque aucune de ces données (alias `@demo-donnees` vers un fichier vide).

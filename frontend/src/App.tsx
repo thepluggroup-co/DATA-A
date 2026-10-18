@@ -8,6 +8,7 @@ import PageProjets from "./pages/Projets";
 import PageQualite from "./pages/Qualite";
 import PageQuestionnaire from "./pages/Questionnaire";
 import PageSuivi from "./pages/Suivi";
+import { DEMO } from "./demo";
 
 const PAGES = [
   { id: "projets", nom: "Projets", module: "M16", Composant: PageProjets },
@@ -69,12 +70,18 @@ function Console({ projets }: { projets: ResumeProjet[] }) {
           ))}
         </nav>
         <div className="pied">
-          Poste local · sans authentification
+          {DEMO ? "Démo sans serveur" : "Poste local · sans authentification"}
           <br />
           (double authentification : phase 7)
         </div>
       </aside>
       <main className="contenu">
+        {DEMO && (
+          <div className="bandeau info">
+            <strong>Démonstration.</strong> Interface réelle de la console. Questionnaire, organisation et quotas : données réelles du projet. Suivi,
+            qualité et base : classeur fictif. Téléchargements désactivés.
+          </div>
+        )}
         <Composant />
       </main>
     </div>

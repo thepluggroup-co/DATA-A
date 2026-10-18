@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { analyser, telecharger, type Envoi, type LigneStatut } from "../api";
 import { Barre, dateFr, nb, pct, useSession } from "../commun";
+import { DEMO } from "../demo";
 
 function Envoyer() {
   const { projet, envoi, memoriser } = useSession();
@@ -25,6 +26,13 @@ function Envoyer() {
       setEncours(false);
     }
   };
+  if (DEMO)
+    return (
+      <div className="bandeau alerte">
+        <strong>Démo en ligne :</strong> un classeur FICTIF de 192 réponses (8 postes × 4 jours × 6 fiches, valeurs tirées au hasard) est déjà
+        chargé. Ses chiffres ne décrivent pas l’étude réelle. Pour envoyer votre vrai classeur, lancez la console sur votre poste.
+      </div>
+    );
   return (
     <form className="carte" onSubmit={soumettre}>
       <h2>Réponses du terrain</h2>
