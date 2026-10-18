@@ -6,8 +6,18 @@
 - [x] Python 3.12.10 et `uv` 0.13.1 installés le 17/10/2026 (installateur Python à signature vérifiée).
 - [ ] Docker : nécessaire à partir de la phase 2 (PostgreSQL).
 
+## Phase 3 — limites connues
+- [ ] **Automatisation horaire** (rapport provisoire chaque heure, définitif le soir, rattrapage toutes les 10 min) : nécessite la file de tâches (Procrastinate, D-006) et le déploiement ; aujourd'hui, `plateforme suivi produire` est lancé à la demande.
+- [ ] **Console web** du superviseur (tableau de bord temps réel, file `A_VERIFIER`, saisie des décisions et des résultats de rappels, notifications) : phase 7 (espaces client et usine).
+- [ ] Les recommandations du rapport reprennent le vocabulaire de V11 (« onglet PARAMETRES », « MASQUE_DEPOUILLEMENT », « actualiser() ») pour l'égalité avec l'étude : à adapter aux écrans de la console (phase 7).
+- [ ] Noms des enquêteurs et motifs de départ : registre privé (hors dépôt) à brancher sur l'export Word du statut (`noms=`), avec le module M6 (phase 6).
+- [ ] Plan d'échantillonnage : quotas lus par un chargeur provisoire (`charger_quotas`) ; modèle et validation en phase 6 (M2) ; paramètres qualité en double avec le plan de terrain, à unifier.
+
 ## Phase 2 — à terminer
-- [ ] **Docker** (disque C: : 5,6 Go libres, 15 à 20 Go nécessaires ; WSL 2 à installer) puis synchronisation PostgreSQL : schéma (réponses brutes JSONB immuables, fiches codées, décisions, contacts séparés), insertion idempotente, rattrapage, bilan de santé, journal des erreurs.
+- [x] Synchronisation PostgreSQL (schéma, insertion idempotente, bilan, journal) : faite et testée sur PostgreSQL 16 portable (D-021, D-022).
+- [ ] **Docker** pour le déploiement (disque C: : 5,4 Go libres, 15 à 20 Go nécessaires ; WSL 2 à installer).
+- [ ] **Contacts chiffrés** au repos et politiques **RLS** multi-locataires : phase 7 (sécurité), tables déjà séparées et `organisation_id` déjà présent.
+- [ ] Rattrapage périodique automatique (équivalent du « filet de sécurité » de V11, toutes les 10 min) : branché en phase 3 avec l'adaptateur Google Forms (lecture des réponses par l'API).
 - [ ] Ouvrir `BASE_ANALYSE.sav` dans SPSS 27 sur un poste équipé (critère « .sav ouvert dans SPSS 27 »).
 - [ ] Export final du classeur de réponses (après le 09/10) si des fiches ont été reçues après cette date.
 - [ ] Types `numerique` et `date` : codage implémenté, sans étude de référence pour le valider.

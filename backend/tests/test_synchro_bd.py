@@ -193,10 +193,10 @@ def test_donnees_reelles_en_base(session: Session, dico_edm: Dictionnaire, terra
         if r.id not in ids_fiches:
             synchro.decider(session, p, r.id, "EXCLUE", motif="réponse de test du 03/10")
     for i in reel.rejetees:
-        synchro.decider(session, p, i, "REJETE", motif="fiche vide (FICHES_SUPPRIMEES)")
+        synchro.decider(session, p, i, "ANNULEE", motif="fiche vide née de la modification du formulaire")
     fiches = synchro.coder(session, p, dico_edm, params).fiches
     session.commit()
-    valides = sorted(f.numfiche for f in fiches if f.statut != "REJETE")
+    valides = sorted(f.numfiche for f in fiches if f.statut not in ("REJETE", "ANNULEE"))
     assert valides == sorted(r["NUMFICHE"] for r in reel.masque)
     _, note = base_analyse(dico_edm, fiches, ParametresBase(), synchro.decisions_courantes(session, p))
     assert (note.valides, note.retenues) == (446, 427)

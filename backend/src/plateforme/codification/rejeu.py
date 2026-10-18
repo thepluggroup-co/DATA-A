@@ -5,8 +5,11 @@
 - Les numéros déjà attribués sont réservés AVANT le codage : une fiche garde toujours son N°,
   et une nouvelle fiche ne reprend jamais le numéro d'une fiche supprimée.
 - Décisions du superviseur (table séparée) : `REJETE` survit à tout recodage (la fiche garde son N°
-  et reste dans l'historique : délais, doublons) ; un `OK` posé sur une fiche à anomalies survit tant
-  que les anomalies sont les mêmes (sinon retour à `A_VERIFIER`) ; `EXCLUE` retire une réponse de test
+  et reste dans l'historique : délais, doublons ; elle est imputée à l'enquêteur) ; `ANNULEE` (incident
+  technique, non imputable : ex. fiches vides du 06/10 nées d'une modification du formulaire) garde aussi
+  son N° et sa place dans la chronologie, mais n'apparaît dans AUCUN comptage, rapport ni analyse ;
+  un `OK` posé sur une fiche à anomalies survit tant que les anomalies sont les mêmes (sinon retour à
+  `A_VERIFIER`) ; `EXCLUE` retire une réponse de test
   ou de pré-test AVANT la numérotation (elle n'est ni numérotée ni codée).
 """
 
@@ -18,7 +21,8 @@ from plateforme.codification.fiche import EtatCodification, FicheCodee, Parametr
 from plateforme.codification.reponses import ReponseBrute, structurer
 from plateforme.dictionnaire.modele import Dictionnaire, RoleIdentification
 
-OK, A_VERIFIER, REJETE = "OK", "A_VERIFIER", "REJETE"
+OK, A_VERIFIER, REJETE, ANNULEE = "OK", "A_VERIFIER", "REJETE", "ANNULEE"
+HORS_COMPTAGE = frozenset({REJETE, ANNULEE})     # fiches exclues du suivi, des analyses et des exports
 
 
 EXCLUE = "EXCLUE"
@@ -26,7 +30,7 @@ EXCLUE = "EXCLUE"
 
 @dataclass(frozen=True)
 class DecisionQC:
-    statut: str                  # OK | REJETE | EXCLUE (réponse de test ou de pré-test : retirée avant numérotation)
+    statut: str                  # OK | REJETE | ANNULEE | EXCLUE (réponse de test ou de pré-test : retirée avant numérotation)
     anomalies_vues: str = ""     # anomalies affichées au moment de la décision (pour un OK)
     auteur: str = ""
     motif: str = ""
@@ -64,8 +68,8 @@ def recoder(dico: Dictionnaire, reponses: list[ReponseBrute], params: Parametres
     for r in uniques:
         f = construire_fiche(dico, r, params, etat, seq_force=reserves.get(r.id, 0))
         d = decisions.get(r.id)
-        if d is not None and d.statut == REJETE:
-            f.statut = REJETE
+        if d is not None and d.statut in (REJETE, ANNULEE):
+            f.statut = d.statut
         elif d is not None and d.statut == OK and f.statut == A_VERIFIER and d.anomalies_vues == f.valeurs["ANOMALIE"]:
             f.statut = OK
         f.valeurs["STATUTQC"] = f.statut

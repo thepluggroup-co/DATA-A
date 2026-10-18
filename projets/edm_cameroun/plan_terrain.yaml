@@ -1,9 +1,16 @@
 # Plan de terrain — EDM Équipements électriques Cameroun (3e source de vérité du projet).
-# Source : EDM_ELECTRIQUE_TEMPS_REEL_V11.gs, constantes ZONES et ZONES_PAR_DEFAUT.
-# Phase 1 : villes et identifiants d'enquêteurs seulement (aucun nom : données personnelles).
+# Sources : EDM_ELECTRIQUE_TEMPS_REEL_V11.gs (ZONES, ZONES_PAR_DEFAUT), onglet ENQUETEURS du masque du 09/10/2026
+# (villes de ENQ9 à ENQ11), état des lieux des enquêteurs du jour 3 (postes, réserves, sorties, remplacements).
+# Aucun nom de personne ni motif de départ : ce sont des données personnelles, tenues hors du dépôt.
 # Secteurs, quartiers et points de collecte (PDF d'organisation) : phase 6 (module M9), décision D-005.
 etude: EDM_EQUIPEMENTS_ELECTRIQUES_CAMEROUN
 fuseau: Africa/Douala
+objectif_total: 500          # décision du 07/10 : 500 fiches pour 8 postes
+jours: [2026-10-05, 2026-10-06, 2026-10-07, 2026-10-08]   # J1 à J3, puis J4 (prolongation) — onglet PARAMETRES de V11
+objectif_jour: 25            # fiches par enquêteur et par jour (V11, PARAMETRES)
+nb_jours: 3                  # l'objectif par enquêteur reste 25 × 3 : J4 sert à rattraper
+seuil_delai_min: 6
+seuil_volume_jour: 30
 villes:
   - {code: 1, id: DOUALA, libelle: Douala, prefixe: DLA}
   - {code: 2, id: YAOUNDE, libelle: Yaoundé, prefixe: YDE}
@@ -12,12 +19,27 @@ enqueteurs:
   - {id: ENQ1, ville: DOUALA}
   - {id: ENQ2, ville: DOUALA}
   - {id: ENQ3, ville: DOUALA}
-  - {id: ENQ4, ville: YAOUNDE}
-  - {id: ENQ5, ville: YAOUNDE}
+  - id: ENQ4
+    ville: YAOUNDE
+    affectations:
+      - {personne: titulaire, fin: "2026-10-06T00:00:00+01:00", sortie: "Jour 02, matin"}
+      - {personne: remplaçant, debut: "2026-10-06T00:00:00+01:00", demarrage: "Jour 02"}
+  - id: ENQ5
+    ville: YAOUNDE
+    affectations:
+      - {personne: titulaire, fin: "2026-10-06T00:00:00+01:00", sortie: "Jour 02, matin"}
+      - {personne: remplaçant, debut: "2026-10-06T00:00:00+01:00", demarrage: "Jour 02"}
   - {id: ENQ6, ville: YAOUNDE}
-  - {id: ENQ7, ville: BAFOUSSAM}
-  - {id: ENQ8, ville: BAFOUSSAM}
-  # ENQ9 à ENQ11 : ville saisie pendant le terrain (onglet ENQUETEURS du masque du 09/10/2026)
-  - {id: ENQ9, ville: DOUALA}
-  - {id: ENQ10, ville: DOUALA}
-  - {id: ENQ11, ville: DOUALA}
+  - id: ENQ7
+    ville: BAFOUSSAM
+    affectations:
+      - {personne: titulaire, debut: "2026-10-06T00:00:00+01:00", demarrage: "Jour 02"}
+  - id: ENQ8
+    ville: BAFOUSSAM
+    affectations:
+      - {personne: titulaire, fin: "2026-10-06T12:00:00+01:00", sortie: "Jour 02, 12 h"}
+      - {personne: remplaçant, debut: "2026-10-07T00:00:00+01:00", demarrage: "Jour 03, matin"}
+  # ENQ9 à ENQ11 : réserves, ville saisie pendant le terrain (onglet ENQUETEURS du 09/10/2026)
+  - {id: ENQ9, ville: DOUALA, role: reserve}
+  - {id: ENQ10, ville: DOUALA, role: reserve}
+  - {id: ENQ11, ville: DOUALA, role: reserve}

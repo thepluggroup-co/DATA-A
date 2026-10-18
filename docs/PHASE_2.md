@@ -1,7 +1,7 @@
 # Phase 2 — Codification, synchronisation, export
 
-**État au 18/10/2026 : partie « sans base de données » terminée et testée ; synchronisation PostgreSQL en attente de Docker.**
-108 tests verts (dont 9 sur les données réelles, locales), `ruff` et `mypy --strict` sans erreur.
+**État au 18/10/2026 : terminée et VALIDÉE par le fondateur (D-023)** (seule réserve : ouverture du .sav dans SPSS 27, aucun poste équipé ici).
+115 tests verts, dont 7 d'intégration sur un vrai PostgreSQL 16 et 7 sur les données réelles (locales), avertissements traités comme des erreurs ; `ruff` et `mypy --strict` sans erreur.
 
 ## Critère d'acceptation
 | Critère | Résultat | Test |
@@ -10,7 +10,7 @@
 | Codification identique à V11 dans tous les cas, y compris rares | ✔ 600 fiches aléatoires (graine fixe) identiques à `construireLigne_` de V11, 67 valeurs + ligne de contact ; les 12 types d'anomalies déclenchés | `test_codification_oracle.py` |
 | 446 collectées / 427 retenues retrouvées | ✔ **les 427 mêmes fiches** que `FILTRE_QUAL` du .sav livré ; taux de remplissage identique pour les 446 ; 8 copies probables identiques | `test_rejeu_reel.py` |
 | `.sav` ouvert dans SPSS 27 avec étiquettes | ◐ `.sav` écrit, **relu et vérifié automatiquement** (étiquettes, valeurs manquantes, mesures, formats, données) ; identique au .sav livré sur 59 des 60 variables communes, la 60e (`MAACAUTR`) étant **tronquée à 8 caractères dans le livrable** et complète chez nous. **Ouverture dans SPSS 27 non faite** (aucun poste équipé ici). | `test_exports.py` |
-| Synchronisation idempotente (réception, base, bilan de santé) | ✘ en attente de Docker (PostgreSQL) | — |
+| Synchronisation idempotente (réception, base, bilan de santé) | ✔ sur PostgreSQL 16 : 50 fiches avec coupure en plein envoi puis relance → 50, aucun doublon ; 4 envois simultanés → aucun doublon ; renvoi modifié refusé et journalisé ; réponses et N° immuables (déclencheurs) ; N° jamais réattribués ; **les 451 réponses réelles passées par la base → 446 valides identiques à V11, 427 retenues, bilan sain** | `test_synchro_bd.py` |
 
 ## Ce qui marche (et est testé)
 - **Réponse brute → fiche codifiée** (`codification/`) : structuration FR/EN (la version répondue l'emporte), codes (référence, autres langues, alias), « Autre », choix multiples, grilles (lignes repérées par libellé), règles de cohérence du dictionnaire, `FICHE_VIDE` / `Q1_VIDE`, N° de fiche figé, variables administratives, délai entre fiches (arrondi `Math.round` de JavaScript), `TEL_DOUBLON` (indicatif retiré), `ENQUETEUR_INCONNU`, `ZONE_ENQ_NON_PARAMETREE`, `VILLE_DIFFERENTE_ZONE`, statut QC, ligne CONTACT séparée.
@@ -27,8 +27,12 @@
 - La liste manuelle « ressemblance forte » de SPSS a **omis deux fiches** (YDE-ENQ5-041 et 042) placées comme d'autres fiches signalées ; sans effet sur la base de 427.
 - Le `.sav` livré au client a **`MAACAUTR` tronqué à 8 caractères** (60 fiches ; marque la plus longue : 44 octets).
 
+## Synchronisation (stockage/)
+- Schéma et migration Alembic `0001` : organisation, projet, `reponse_brute` (JSONB, immuable), `numero_fiche` (registre figé), `fiche_codee` (recalculable), `decision_qc` (historique), `contact` (séparé), `journal_sync` ; `organisation_id` partout.
+- `synchro.recevoir` / `coder` / `decider` / `bilan` (D-022). Un test vérifie que la migration correspond exactement aux modèles (il a d'ailleurs trouvé un index manquant).
+- Tests : `PLATEFORME_PG_BIN` ou `~/.local/outils/pgsql/bin` (binaires portables, D-021) ; serveur jetable créé et arrêté par les tests.
+
 ## Ce qui reste (voir `docs/RESTE_A_FAIRE.md`)
-- Synchronisation PostgreSQL : schéma, insertion idempotente, rattrapage, bilan de santé, journal — **Docker requis**.
 - Ouverture du `.sav` dans SPSS 27 sur un poste équipé.
 - Les décisions de l'étude sont reconstituées dans `reference/prive/decisions_qc_edm.yaml` (hors Git).
 

@@ -7,6 +7,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from plateforme.dictionnaire import diagnostic, diff, fichiers
 from plateforme.generateurs import excel, formulaire, masque, spss, tri_a_plat
@@ -91,20 +92,22 @@ def _importer_pdf(args: argparse.Namespace) -> int:
     return 0
 
 
-def _coder_base(args: argparse.Namespace) -> int:
+class DecisionsInconnues(ValueError):
+    """Le fichier de décisions cite des fiches absentes du tableur."""
+
+
+def _charger_base(args: argparse.Namespace) -> tuple[Any, Any, list[Any], list[Any], dict[str, Any]]:
+    """Tableur de réponses + décisions -> (dictionnaire, plan de terrain, réponses, fiches codées, décisions)."""
     import yaml
 
     from plateforme.codification.fiche import ParametresCodification
-    from plateforme.codification.qualite import ParametresBase, base_analyse
     from plateforme.codification.rejeu import DecisionQC, recoder
-    from plateforme.exports.sav import exporter_sav
-    from plateforme.exports.tableaux import exporter_contacts, exporter_csv, exporter_masque
     from plateforme.imports.reponses_tableur import lire_onglet, lire_reponses
 
     dico = fichiers.charger(args.dictionnaire)
     terrain = plan_terrain.charger(args.plan_terrain)
     params = ParametresCodification(villes=terrain.villes_masque(), enqueteurs={e.id: e.ville or "" for e in terrain.enqueteurs},
-                                    fuseau=terrain.fuseau)
+                                    seuil_delai_min=terrain.seuil_delai_min, fuseau=terrain.fuseau)
     reponses = lire_reponses(lire_onglet(args.tableur, args.onglet), dico, fuseau=terrain.fuseau, source=Path(args.tableur).name)
     fiches = recoder(dico, reponses, params)
     decisions: dict[str, DecisionQC] = {}
@@ -122,10 +125,22 @@ def _coder_base(args: argparse.Namespace) -> int:
         par_num = {f.numfiche: f.id_reponse for f in fiches}
         inconnus = sorted(k for k in brutes if k not in ids and k not in par_num)
         if inconnus:
-            print("✘ fiches inconnues dans les décisions :", ", ".join(inconnus))
-            return 1
+            raise DecisionsInconnues("fiches inconnues dans les décisions : " + ", ".join(inconnus))
         decisions |= {par_num[k]: decision(d) for k, d in brutes.items() if k in par_num}
         fiches = recoder(dico, reponses, params, decisions=decisions)
+    return dico, terrain, reponses, fiches, decisions
+
+
+def _coder_base(args: argparse.Namespace) -> int:
+    from plateforme.codification.qualite import ParametresBase, base_analyse
+    from plateforme.exports.sav import exporter_sav
+    from plateforme.exports.tableaux import exporter_contacts, exporter_csv, exporter_masque
+
+    try:
+        dico, terrain, reponses, fiches, decisions = _charger_base(args)
+    except DecisionsInconnues as e:
+        print("✘", e)
+        return 1
     retenues, note = base_analyse(dico, fiches, ParametresBase(), decisions)
     sortie = Path(args.sortie)
     cols = masque.colonnes_masque(dico, terrain.villes_masque())
@@ -137,6 +152,52 @@ def _coder_base(args: argparse.Namespace) -> int:
     print(f"{len(reponses)} réponses lues, {len(fiches)} fiches codées. {note.texte()}")
     print(f"✔ .sav relu et vérifié : {res.chemin.name} ({res.lignes} lignes, {res.variables} variables) → {sortie}")
     print("⚠ CONTACTS.xlsx contient des données personnelles : ne pas le joindre à la base d'analyse ni le versionner.")
+    return 0
+
+
+def _suivi(args: argparse.Namespace) -> int:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from plateforme.suivi.livrables import charger_quotas, produire
+
+    try:
+        dico, terrain, _, fiches, decisions = _charger_base(args)
+    except DecisionsInconnues as e:
+        print("✘", e)
+        return 1
+    tz = ZoneInfo(terrain.fuseau)
+    maintenant = datetime.fromisoformat(args.maintenant).replace(tzinfo=tz) if args.maintenant else datetime.now(tz)
+    jour = args.jour or maintenant.strftime("%Y-%m-%d")
+    ecrits = produire(dico, fiches, terrain, charger_quotas(args.plan_echantillonnage, terrain), decisions, jour, maintenant,
+                      Path(args.sortie), args.graine)
+    for nom, chemin in ecrits.items():
+        print(f"✔ {nom} : {chemin}")
+    print("⚠ RAPPELS_*.xlsx contient des téléphones : données personnelles, à ne pas diffuser ni versionner.")
+    return 0
+
+
+def _liens(args: argparse.Namespace) -> int:
+    from openpyxl import Workbook
+
+    from plateforme.deploiement.liens import analyser_modele, lien, qr_code
+
+    terrain = plan_terrain.charger(args.plan_terrain)
+    villes = {v.id: v.libelle for v in terrain.villes}
+    modele = analyser_modele(args.modele, args.enqueteur, args.ville)
+    sortie = Path(args.sortie)
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    ws.title = "LIENS"
+    ws.append(["ENQ_ID", "VILLE", "RÔLE", "LIEN_PERSONNEL", "QR CODE"])
+    for e in terrain.enqueteurs:
+        url = lien(modele, e.id, villes.get(e.ville or ""))
+        png = qr_code(url, sortie / "qr" / f"{e.id}.png")
+        ws.append([e.id, e.ville or "(à saisir)", e.role.value, url, str(png.relative_to(sortie))])
+    sortie.mkdir(parents=True, exist_ok=True)
+    wb.save(sortie / "LIENS_PERSONNELS.xlsx")
+    print(f"✔ {len(terrain.enqueteurs)} liens et QR codes → {sortie}")
     return 0
 
 
@@ -184,9 +245,30 @@ def main(argv: list[str] | None = None) -> int:
     bc.add_argument("--onglet", default="Form Responses 1")
     bc.add_argument("--dictionnaire", required=True)
     bc.add_argument("--plan-terrain", required=True)
-    bc.add_argument("--decisions", help="YAML {N° de fiche: {statut: OK|REJETE, motif: …}}")
+    bc.add_argument("--decisions", help="YAML {N° de fiche: {statut: OK|REJETE|ANNULEE|EXCLUE, motif: …}}")
     bc.add_argument("--sortie", required=True)
     bc.set_defaults(f=_coder_base)
+    su = sous.add_parser("suivi").add_subparsers(dest="action", required=True)
+    sp = su.add_parser("produire", help="tableau de bord, rapport journalier, état des enquêteurs, effet enquêteur, rappels")
+    sp.add_argument("tableur")
+    sp.add_argument("--onglet", default="Form Responses 1")
+    sp.add_argument("--dictionnaire", required=True)
+    sp.add_argument("--plan-terrain", required=True)
+    sp.add_argument("--plan-echantillonnage", required=True)
+    sp.add_argument("--decisions")
+    sp.add_argument("--jour", help="jour du rapport (aaaa-mm-jj), par défaut aujourd'hui")
+    sp.add_argument("--maintenant", help="heure de référence (aaaa-mm-jjThh:mm) ; avant 18 h le rapport du jour est PROVISOIRE")
+    sp.add_argument("--graine", type=int, default=0, help="graine du tirage des rappels (publiée avec la liste)")
+    sp.add_argument("--sortie", required=True)
+    sp.set_defaults(f=_suivi)
+    dp = sous.add_parser("deploiement").add_subparsers(dest="action", required=True)
+    dl = dp.add_parser("liens", help="liens personnels pré-remplis et QR codes depuis UN lien modèle de Google Forms")
+    dl.add_argument("--modele", required=True, help="lien pré-rempli copié dans Google Forms (« Obtenir le lien prérempli »)")
+    dl.add_argument("--enqueteur", required=True, help="identifiant choisi dans le modèle (ex. ENQ1)")
+    dl.add_argument("--ville", required=True, action="append", help="ville choisie dans le modèle (répéter pour chaque langue)")
+    dl.add_argument("--plan-terrain", required=True)
+    dl.add_argument("--sortie", required=True)
+    dl.set_defaults(f=_liens)
     args = p.parse_args(argv)
     code: int = args.f(args)
     return code

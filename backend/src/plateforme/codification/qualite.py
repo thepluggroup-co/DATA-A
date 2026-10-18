@@ -17,11 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from plateforme.codification.fiche import FicheCodee
-from plateforme.codification.rejeu import OK, REJETE, DecisionQC
+from plateforme.codification.rejeu import ANNULEE, HORS_COMPTAGE, OK, REJETE, DecisionQC
 from plateforme.dictionnaire.modele import Dictionnaire, TypeQuestion
 
 AUCUN, SUSPECT, COPIE = 0, 1, 2
 REJETEES = "rejetées par le superviseur"
+ANNULEES = "annulées (incident technique, non imputées)"
 
 
 @dataclass(frozen=True)
@@ -43,15 +44,20 @@ class NoteDeBase:
         return self.ecartees.get(REJETEES, 0)
 
     @property
+    def annulees(self) -> int:
+        return self.ecartees.get(ANNULEES, 0)
+
+    @property
     def valides(self) -> int:
-        return self.collectees - self.rejetees
+        return self.collectees - self.rejetees - self.annulees
 
     def texte(self) -> str:
         """Note de base à placer en tête de rapport et sous chaque tableau (leçon : base 446 / 427 non expliquée)."""
-        motifs = " ; ".join(f"{m} : {n}" for m, n in self.ecartees.items() if n and m != REJETEES)
+        motifs = " ; ".join(f"{m} : {n}" for m, n in self.ecartees.items() if n and m not in (REJETEES, ANNULEES))
         debut = f"Base : {self.collectees} fiches reçues"
-        if self.rejetees:
-            debut += f", dont {self.rejetees} rejetées par le superviseur, soit {self.valides} fiches valides collectées"
+        hors = [f"{n} {m}" for m, n in ((ANNULEES, self.annulees), (REJETEES, self.rejetees)) if n]
+        if hors:
+            debut += f", dont {' et '.join(hors)}, soit {self.valides} fiches valides collectées"
         ecartees = self.valides - self.retenues
         return (debut + (f" ; {ecartees} écartées de l'analyse ({motifs})" if ecartees else "")
                 + f" ; {self.retenues} fiches retenues pour l'analyse.")
@@ -130,12 +136,14 @@ def base_analyse(dico: Dictionnaire, fiches: list[FicheCodee], params: Parametre
                  decisions: dict[str, DecisionQC] | None = None) -> tuple[list[FicheCodee], NoteDeBase]:
     """Fiches retenues pour l'analyse et note de base. Une décision OK du superviseur prime sur les règles automatiques."""
     decisions = decisions or {}
-    doublons = quasi_doublons(dico, [f for f in fiches if f.statut != REJETE], params)
-    retenues, motifs = [], {REJETEES: 0, f"remplissage < {params.seuil_remplissage:g} %": 0,
+    doublons = quasi_doublons(dico, [f for f in fiches if f.statut not in HORS_COMPTAGE], params)
+    retenues, motifs = [], {ANNULEES: 0, REJETEES: 0, f"remplissage < {params.seuil_remplissage:g} %": 0,
                             "copies probables": 0}
     for f in fiches:
         valide = decisions.get(f.id_reponse, DecisionQC("")).statut == OK
-        if f.statut == REJETE:
+        if f.statut == ANNULEE:
+            motifs[ANNULEES] += 1
+        elif f.statut == REJETE:
             motifs[REJETEES] += 1
         elif not valide and taux_remplissage(dico, f) < params.seuil_remplissage:
             motifs[f"remplissage < {params.seuil_remplissage:g} %"] += 1

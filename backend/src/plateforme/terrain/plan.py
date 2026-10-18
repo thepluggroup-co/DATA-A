@@ -1,7 +1,12 @@
-"""Lecture du plan de terrain (phase 1 : villes et identifiants d'enquêteurs)."""
+"""Plan de terrain : villes, postes d'enquêteurs (titulaire, réserve) et affectations datées (remplacements).
+
+Aucun nom de personne ni motif de départ n'est stocké ici : ce sont des données personnelles (registre privé).
+"""
 
 from __future__ import annotations
 
+from datetime import date, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Self
 
@@ -19,10 +24,35 @@ class VillePlan(BaseModel):
     prefixe: str = Field(pattern=r"^[A-Z]{3}$")
 
 
+class Role(StrEnum):
+    TITULAIRE = "titulaire"
+    RESERVE = "reserve"          # ne compte dans aucune statistique d'équipe tant qu'elle n'est pas activée
+
+
+class Affectation(BaseModel):
+    """Période pendant laquelle une personne occupe le poste ; les fiches sont attribuées selon leur horodatage."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    personne: str = Field(description="Libellé non nominatif : « titulaire », « remplaçant 1 »…")
+    debut: datetime | None = None
+    fin: datetime | None = None
+    sortie: str = Field(default="", description="Moment de sortie tel qu'affiché (ex. « Jour 02, matin »)")
+    demarrage: str = Field(default="", description="Moment de démarrage tel qu'affiché (ex. « Jour 02 »)")
+
+
 class EnqueteurPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str = Field(pattern=r"^\S{1,15}$")
     ville: str | None = None
+    role: Role = Role.TITULAIRE
+    affectations: list[Affectation] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _periodes(self) -> Self:
+        for a, b in zip(self.affectations, self.affectations[1:], strict=False):
+            if a.fin is None or b.debut is None or b.debut < a.fin:
+                raise ValueError(f"{self.id} : affectations qui se chevauchent ou sans dates")
+        return self
 
 
 class PlanTerrain(BaseModel):
@@ -31,6 +61,12 @@ class PlanTerrain(BaseModel):
     fuseau: str = "Africa/Douala"
     villes: list[VillePlan]
     enqueteurs: list[EnqueteurPlan] = Field(default_factory=list)
+    objectif_total: int | None = Field(default=None, description="Fiches attendues de l'équipe (base du rapport de statut)")
+    jours: list[date] = Field(default_factory=list, description="Calendrier J1…Jn (prolongations comprises)")
+    objectif_jour: float = 25
+    nb_jours: int = 3
+    seuil_delai_min: int = 6
+    seuil_volume_jour: int = 30
 
     @model_validator(mode="after")
     def _coherence(self) -> Self:

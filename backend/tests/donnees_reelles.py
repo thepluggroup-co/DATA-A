@@ -8,8 +8,8 @@ Sources (masque V11 téléchargé le 09/10/2026) :
 
 Historique reconstitué, sans aucune valeur recopiée du masque dans le codage :
 - fiches CODÉES : réponses présentes dans le masque (rapprochées par enquêteur, date et minute) ;
-- fiches REJETÉES : les 4 fiches supprimées, qui ont consommé un N° et comptent dans les délais
-  (dans la plateforme une fiche écartée n'est jamais effacée : elle devient REJETE) ;
+- fiches ANNULÉES : les 4 fiches vides supprimées le 07/10, qui ont consommé un N° et comptent dans les délais
+  (incident technique : dans la plateforme elles deviennent ANNULEE, jamais effacées, imputées à personne) ;
 - fiches ÉCARTÉES : réponses supprimées du formulaire avant toute numérotation (fiche de test du 03/10).
 """
 
@@ -24,7 +24,7 @@ from typing import Any
 from conftest import REFERENCE
 
 from plateforme.codification.fiche import FicheCodee, ParametresCodification
-from plateforme.codification.rejeu import REJETE, DecisionQC, recoder
+from plateforme.codification.rejeu import ANNULEE, DecisionQC, recoder
 from plateforme.dictionnaire.modele import Dictionnaire
 from plateforme.imports.reponses_tableur import lire_onglet, lire_reponses
 from plateforme.terrain.plan import PlanTerrain
@@ -79,7 +79,7 @@ def charger(dico: Dictionnaire, terrain: PlanTerrain, chemin: Path = MASQUE_0910
             rejetees.add(f.id_reponse)
         else:
             ecartees.append(k)
-    decisions = {i: DecisionQC(REJETE, motif="Q1 non renseignée (FICHES_SUPPRIMEES)") for i in rejetees}
+    decisions = {i: DecisionQC(ANNULEE, motif="Fiche vide née de la modification du formulaire (FICHES_SUPPRIMEES)") for i in rejetees}
     a_coder = [r for r in reps if r.id in codees | rejetees]
     # Décisions OK du superviseur : fiches du masque marquées OK malgré des anomalies
     par_num = {r["NUMFICHE"]: r for r in masque}

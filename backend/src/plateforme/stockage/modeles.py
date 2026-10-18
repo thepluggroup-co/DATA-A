@@ -91,7 +91,7 @@ class DecisionQCBD(Base):
     organisation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organisation.id"), index=True)
     projet_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projet.id"), index=True)
     reponse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reponse_brute.id"), index=True)
-    statut: Mapped[str] = mapped_column(String(20))                  # OK | REJETE | EXCLUE
+    statut: Mapped[str] = mapped_column(String(20))                  # OK | REJETE | ANNULEE | EXCLUE
     anomalies_vues: Mapped[str] = mapped_column(Text, default="")
     motif: Mapped[str] = mapped_column(Text, default="")
     auteur: Mapped[str] = mapped_column(String(200), default="")

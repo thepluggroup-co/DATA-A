@@ -16,7 +16,7 @@ import pytest
 from donnees_reelles import MASQUE_0910, SAV_446, DonneesReelles, charger
 
 from plateforme.codification.qualite import COPIE, SUSPECT, ParametresBase, base_analyse, quasi_doublons, taux_remplissage
-from plateforme.codification.rejeu import REJETE
+from plateforme.codification.rejeu import HORS_COMPTAGE
 from plateforme.dictionnaire.modele import Dictionnaire
 from plateforme.generateurs.masque import colonnes_masque
 from plateforme.terrain.plan import PlanTerrain
@@ -34,14 +34,14 @@ def test_historique_reconstitue(reel: DonneesReelles) -> None:
     assert len(reel.masque) == 446
     assert len(reel.rejetees) == 4                       # fiches vides du 06/10, numérotées puis retirées
     assert reel.ecartees == [("ENQ6", "2026-10-03", "18:56")]   # fiche de test supprimée avant le terrain
-    assert sum(f.statut == REJETE for f in reel.fiches) == 4
+    assert sum(f.statut == "ANNULEE" for f in reel.fiches) == 4
 
 
 def test_fiches_identiques_a_v11(reel: DonneesReelles, dico_edm: Dictionnaire, terrain_edm: PlanTerrain) -> None:
     cols = colonnes_masque(dico_edm, terrain_edm.villes_masque())
     textes = {c.code for c in cols if not c.est_numerique()}
     par_num = {r["NUMFICHE"]: r for r in reel.masque}
-    valides = [f for f in reel.fiches if f.statut != REJETE]
+    valides = [f for f in reel.fiches if f.statut not in HORS_COMPTAGE]
     assert sorted(f.numfiche for f in valides) == sorted(par_num), "N° de fiche"
     ecarts: dict[str, list[str]] = {}
     for f in valides:
@@ -59,7 +59,7 @@ def test_remplissage_et_quasi_doublons_comme_le_sav(reel: DonneesReelles, dico_e
     pyreadstat = pytest.importorskip("pyreadstat")
     df, _ = pyreadstat.read_sav(str(SAV_446), usecols=["NUMFICHE", "TX_REMPL", "DOUBLON_SUSP", "FILTRE_QUAL"])
     sav = {r.NUMFICHE.strip(): r for r in df.itertuples()}
-    valides = [f for f in reel.fiches if f.statut != REJETE]
+    valides = [f for f in reel.fiches if f.statut not in HORS_COMPTAGE]
     assert [f.numfiche for f in valides if abs(taux_remplissage(dico_edm, f) - sav[f.numfiche].TX_REMPL) > 0.05] == []
     qd = quasi_doublons(dico_edm, valides, ParametresBase())
     copies = {f.numfiche for f in valides if qd[f.id_reponse] == COPIE}
@@ -76,7 +76,7 @@ DECISIONS = MASQUE_0910.parents[1] / "decisions_qc_edm.yaml"
 
 @pytest.mark.skipif(not DECISIONS.exists(), reason="décisions de l'étude absentes (reference/prive/, hors Git)")
 def test_ligne_de_commande_base_coder(tmp_path: Path) -> None:
-    """Du tableur brut aux livrables, avec les décisions réelles (1 réponse de test EXCLUE, 4 fiches vides REJETE)."""
+    """Du tableur brut aux livrables, avec les décisions réelles (1 réponse de test EXCLUE, 4 fiches vides ANNULEE)."""
     from conftest import PROJET_EDM
 
     from plateforme.cli import main
@@ -97,6 +97,6 @@ def test_base_446_collectees_427_retenues(reel: DonneesReelles, dico_edm: Dictio
     assert {f.numfiche for f in retenues} == retenues_sav
     assert note.retenues == 427
     assert note.valides == 446
-    assert note.texte() == ("Base : 450 fiches reçues, dont 4 rejetées par le superviseur, soit 446 fiches valides collectées ; "
+    assert note.texte() == ("Base : 450 fiches reçues, dont 4 annulées (incident technique, non imputées), soit 446 fiches valides collectées ; "
                             "19 écartées de l'analyse (remplissage < 70 % : 11 ; copies probables : 8) ; "
                             "427 fiches retenues pour l'analyse.")
