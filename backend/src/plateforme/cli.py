@@ -9,6 +9,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from plateforme.codification.chargement import DecisionsInconnues
 from plateforme.dictionnaire import diagnostic, diff, fichiers
 from plateforme.generateurs import excel, formulaire, masque, spss, tri_a_plat
 from plateforme.terrain import plan as plan_terrain
@@ -92,42 +93,18 @@ def _importer_pdf(args: argparse.Namespace) -> int:
     return 0
 
 
-class DecisionsInconnues(ValueError):
-    """Le fichier de décisions cite des fiches absentes du tableur."""
-
-
 def _charger_base(args: argparse.Namespace) -> tuple[Any, Any, list[Any], list[Any], dict[str, Any]]:
     """Tableur de réponses + décisions -> (dictionnaire, plan de terrain, réponses, fiches codées, décisions)."""
     import yaml
 
-    from plateforme.codification.fiche import ParametresCodification
-    from plateforme.codification.rejeu import DecisionQC, recoder
+    from plateforme.codification.chargement import coder
     from plateforme.imports.reponses_tableur import lire_onglet, lire_reponses
 
     dico = fichiers.charger(args.dictionnaire)
     terrain = plan_terrain.charger(args.plan_terrain)
-    params = ParametresCodification(villes=terrain.villes_masque(), enqueteurs={e.id: e.ville or "" for e in terrain.enqueteurs},
-                                    seuil_delai_min=terrain.seuil_delai_min, fuseau=terrain.fuseau)
     reponses = lire_reponses(lire_onglet(args.tableur, args.onglet), dico, fuseau=terrain.fuseau, source=Path(args.tableur).name)
-    fiches = recoder(dico, reponses, params)
-    decisions: dict[str, DecisionQC] = {}
-    if args.decisions:
-        # Clé : identifiant de réponse, ou N° de fiche. Les EXCLUE (tests) sont appliquées d'abord : elles changent
-        # la numérotation ; les N° des autres décisions sont donc lus APRÈS exclusion.
-        brutes = yaml.safe_load(Path(args.decisions).read_text(encoding="utf-8")) or {}
-        ids = {r.id for r in reponses}
-
-        def decision(d: dict[str, str]) -> DecisionQC:
-            return DecisionQC(d["statut"], anomalies_vues=d.get("anomalies_vues", ""), motif=d.get("motif", ""))
-
-        decisions = {k: decision(d) for k, d in brutes.items() if k in ids}
-        fiches = recoder(dico, reponses, params, decisions=decisions)
-        par_num = {f.numfiche: f.id_reponse for f in fiches}
-        inconnus = sorted(k for k in brutes if k not in ids and k not in par_num)
-        if inconnus:
-            raise DecisionsInconnues("fiches inconnues dans les décisions : " + ", ".join(inconnus))
-        decisions |= {par_num[k]: decision(d) for k, d in brutes.items() if k in par_num}
-        fiches = recoder(dico, reponses, params, decisions=decisions)
+    brutes = (yaml.safe_load(Path(args.decisions).read_text(encoding="utf-8")) or {}) if args.decisions else None
+    fiches, decisions = coder(dico, terrain, reponses, brutes)
     return dico, terrain, reponses, fiches, decisions
 
 
@@ -201,6 +178,15 @@ def _liens(args: argparse.Namespace) -> int:
     return 0
 
 
+def _serveur(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    if args.hote not in ("127.0.0.1", "localhost", "::1"):
+        print("⚠ Aucune authentification n'est encore en place : n'exposez pas l'API hors du poste de l'usine.")
+    uvicorn.run("plateforme.api.app:app", host=args.hote, port=args.port, reload=args.recharger)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for flux in (sys.stdout, sys.stderr):          # console Windows en cp1252 : ✔ ⚠ ✘ → et accents
         if hasattr(flux, "reconfigure"):
@@ -269,6 +255,11 @@ def main(argv: list[str] | None = None) -> int:
     dl.add_argument("--plan-terrain", required=True)
     dl.add_argument("--sortie", required=True)
     dl.set_defaults(f=_liens)
+    sv = sous.add_parser("serveur", help="API de la console usine + interface web compilée (frontend/dist)")
+    sv.add_argument("--hote", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--recharger", action="store_true", help="rechargement automatique (développement)")
+    sv.set_defaults(f=_serveur)
     args = p.parse_args(argv)
     code: int = args.f(args)
     return code

@@ -6,9 +6,18 @@
 - [x] Python 3.12.10 et `uv` 0.13.1 installés le 17/10/2026 (installateur Python à signature vérifiée).
 - [ ] Docker : nécessaire à partir de la phase 2 (PostgreSQL).
 
+## Console usine (D-029, D-030) — limites connues
+- [ ] **Authentification** (double authentification pour l'usine, CLAUDE.md §8) : absente. Ne jamais exposer `plateforme serveur` hors du poste.
+- [ ] **Réserves comptées dans l'objectif d'équipe** : le tableau de bord et le rapport journalier comptent les 3 réserves non activées (objectif 825 = 11 × 75 ; « 11 enquêteurs × 25 »), ce qui contredit D-026. C'est le comportement de V11 que reproduisent les tests de phase 3 (objectif 275 du 09/10) : **arbitrage du fondateur nécessaire** avant correction.
+- [ ] Décisions qualité saisies à l'écran et résultats des rappels : attendent la synchronisation PostgreSQL (aujourd'hui fichier YAML).
+- [ ] Zones, quartiers et points de collecte : absents du plan de terrain (M3/M9, phase 6) ; l'écran Organisation le signale.
+- [ ] Logo : redessiné en SVG (`frontend/src/commun.tsx`) faute du fichier officiel ; à remplacer.
+- [ ] Polices chargées depuis Google Fonts : repli sur les polices système hors connexion ; à embarquer si le poste usine travaille souvent hors ligne.
+- [ ] Tests de l'interface : vérification TypeScript et parcours navigateur manuel (Playwright) ; pas encore de suite automatisée côté `frontend/`.
+
 ## Phase 3 — limites connues
 - [ ] **Automatisation horaire** (rapport provisoire chaque heure, définitif le soir, rattrapage toutes les 10 min) : nécessite la file de tâches (Procrastinate, D-006) et le déploiement ; aujourd'hui, `plateforme suivi produire` est lancé à la demande.
-- [ ] **Console web** du superviseur (tableau de bord temps réel, file `A_VERIFIER`, saisie des décisions et des résultats de rappels, notifications) : phase 7 (espaces client et usine).
+- [~] **Console web** du superviseur : première version branchée (D-029) ; restent la saisie des décisions et des rappels, les notifications et le temps réel automatique.
 - [ ] Les recommandations du rapport reprennent le vocabulaire de V11 (« onglet PARAMETRES », « MASQUE_DEPOUILLEMENT », « actualiser() ») pour l'égalité avec l'étude : à adapter aux écrans de la console (phase 7).
 - [ ] Noms des enquêteurs et motifs de départ : registre privé (hors dépôt) à brancher sur l'export Word du statut (`noms=`), avec le module M6 (phase 6).
 - [ ] Plan d'échantillonnage : quotas lus par un chargeur provisoire (`charger_quotas`) ; modèle et validation en phase 6 (M2) ; paramètres qualité en double avec le plan de terrain, à unifier.

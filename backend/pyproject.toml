@@ -18,6 +18,9 @@ dependencies = [
     "python-docx>=1.2.0",
     "qrcode>=7.4",
     "pillow>=13.0.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
 ]
 
 [project.scripts]
@@ -31,6 +34,7 @@ dev = [
     "types-pyyaml",
     "types-openpyxl>=3.1.5.20261017",
     "pandas-stubs>=3.0.5.260914",
+    "httpx2>=2.14.0",
 ]
 
 [build-system]
