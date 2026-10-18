@@ -1,6 +1,6 @@
 # Phase 3 — Suivi de terrain et contrôle qualité (M10, M11, M12)
 
-**État au 18/10/2026 : terminée, en attente de validation du fondateur.** 143 tests verts (avertissements traités comme des erreurs), `ruff` et `mypy --strict` sans erreur.
+**État au 18/10/2026 : terminée et VALIDÉE par le fondateur (D-028).** 143 tests verts (avertissements traités comme des erreurs), `ruff` et `mypy --strict` sans erreur.
 
 ## Résultats (critère d'acceptation)
 | Critère | Résultat | Test |
