@@ -100,3 +100,36 @@ def test_base_446_collectees_427_retenues(reel: DonneesReelles, dico_edm: Dictio
     assert note.texte() == ("Base : 450 fiches reçues, dont 4 annulées (incident technique, non imputées), soit 446 fiches valides collectées ; "
                             "19 écartées de l'analyse (remplissage < 70 % : 11 ; copies probables : 8) ; "
                             "427 fiches retenues pour l'analyse.")
+
+
+@pytest.mark.skipif(not (DECISIONS.exists() and SAV_446.exists()), reason="données de l'étude absentes (reference/prive/, hors Git)")
+def test_ligne_de_commande_analyse_base(tmp_path: Path) -> None:
+    """Du tableur brut aux deux bases SPSS livrées (collecte 446, analyse 427), dérivées comprises."""
+    from conftest import PROJET_EDM
+
+    from plateforme.analyse.donnees import depuis_sav
+    from plateforme.cli import main
+    code = main(["analyse", "base", str(MASQUE_0910), "--dictionnaire", str(PROJET_EDM / "dictionnaire.yaml"),
+                 "--plan-terrain", str(PROJET_EDM / "plan_terrain.yaml"), "--plan-analyse", str(PROJET_EDM / "plan_analyse.yaml"),
+                 "--decisions", str(DECISIONS), "--sortie", str(tmp_path)])
+    assert code == 0
+    collecte, analyse = depuis_sav(tmp_path / "BASE_COLLECTE.sav"), depuis_sav(tmp_path / "BASE_ANALYSE_DERIVEES.sav")
+    assert (len(collecte.table), len(analyse.table)) == (446, 427)
+    assert int((collecte.table["FILTRE_QUAL"] == 1).sum()) == 427
+    for v in ("MARQUE_G", "IDX_SAV", "DEPENSE_AN", "TX_REMPL", "JOURTERR"):
+        assert v in analyse.table.columns
+
+
+@pytest.mark.skipif(not (DECISIONS.exists() and SAV_446.exists()), reason="données de l'étude absentes (reference/prive/, hors Git)")
+def test_ligne_de_commande_analyse_resultats(tmp_path: Path) -> None:
+    from conftest import PROJET_EDM
+    from openpyxl import load_workbook
+
+    from plateforme.cli import main
+    code = main(["analyse", "resultats", str(MASQUE_0910), "--dictionnaire", str(PROJET_EDM / "dictionnaire.yaml"),
+                 "--plan-terrain", str(PROJET_EDM / "plan_terrain.yaml"), "--plan-analyse", str(PROJET_EDM / "plan_analyse.yaml"),
+                 "--decisions", str(DECISIONS), "--sortie", str(tmp_path)])
+    assert code == 0
+    sps = (tmp_path / "RESULTATS.sps").read_text(encoding="utf-8")
+    assert "COMPUTE CTRL_BASE = (CTRL_N = 427)." in sps and "GET FILE" not in sps
+    assert len(list(load_workbook(tmp_path / "RESULTATS.xlsx")["Syntaxe SPSS"].iter_rows())) == 21

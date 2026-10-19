@@ -1,0 +1,163 @@
+# Plan d'analyse — EDM Équipements électriques Cameroun.
+# Transcription des syntaxes SPSS de l'étude (chaque règle cite son fichier:ligne d'origine dans reference/spss/) :
+#   R41 = EDM_EE_RECONFIGURATION_V4_1.sps ; V4 = EDM_EE_SYNTAXE_ANALYSE_GLOBALE_V4.sps ; N05 = EDM_EE_ANALYSES_N05_FILTREES.sps
+# Syntaxe des règles : backend/src/plateforme/analyse/derivees.py.
+etude: EDM_EQUIPEMENTS_ELECTRIQUES_CAMEROUN
+
+# Valeurs manquantes (R41:183-194) : 99 manquant partout ; REVMENME : 97, 98, 99 ;
+# « Sans avis » (98) reste une réponse VALIDE pour MEQUAFIA, MEILPRIX, ORASHAGA, ORASBAGA.
+manquants:
+  defaut: [99]
+  REVMENME: [97, 98, 99]
+
+derivations:
+  # ---- R41, partie 5 : groupes de profils
+  - {nom: PROFIL4, source: "R41:214", label: "Profil (4 groupes : PME et BTP fusionnés)",
+     recode: {source: VOUSETES, regles: [[[1], 1], [[2, 4], 2], [[3], 3], [[5], 4]]},
+     valeurs: {1: Particuliers, 2: "Entreprises (PME + BTP)", 3: "Électriciens / artisans", 4: "Revendeurs / grossistes"}}
+  - {nom: CATEG3, source: "R41:215", label: "Maillon de la chaîne",
+     recode: {source: VOUSETES, regles: [[[1, 2], 1], [[3, 4], 2], [[5], 3]]},
+     valeurs: {1: "Utilisateurs finaux (particuliers, PME)", 2: "Prescripteurs / installateurs (artisans, BTP)", 3: "Distributeurs (revendeurs, grossistes)"}}
+  - {nom: AGE3, source: "R41:216", label: "Âge (3 classes)", mesure: ordinal,
+     recode: {source: AGEREPON, regles: [[[1, 2], 1], [[3], 2], [[4, 5], 3]]},
+     valeurs: {1: "Moins de 35 ans", 2: "35-44 ans", 3: "45 ans et plus"}}
+  - {nom: REVMEN_P, source: "R41:226-230", label: "Q5. Revenu mensuel du ménage - PARTICULIERS uniquement", mesure: ordinal, manquants: [97],
+     etapes: [{si: "REVMENME in (1, 2, 3, 4, 5)", valeur: REVMENME}, {si: "VOUSETES != 1", valeur: 97}]}
+  # ---- R41:233 : origines, avis exprimés seulement
+  - {nom: MEQUA_AV, source: "R41:233", recode: {source: MEQUAFIA, regles: [[[1], 1], [[2], 2], [[3], 3]]}}
+  - {nom: MEILP_AV, source: "R41:233", recode: {source: MEILPRIX, regles: [[[1], 1], [[2], 2], [[3], 3]]}}
+  - {nom: ORHG_AV, source: "R41:233", recode: {source: ORASHAGA, regles: [[[1], 1], [[2], 2], [[3], 3]]}}
+  - {nom: ORBG_AV, source: "R41:233", recode: {source: ORASBAGA, regles: [[[1], 1], [[2], 2], [[3], 3]]}}
+  # ---- R41:241-245 : Q41 recueillie en réponse unique
+  - {nom: NB_LEV, source: "R41:241", mesure: scale,
+     compte: {variables: [RFIDPRIX, RFIDQUAL, RFIDSTOC, RFIDCONS, RFIDSAVF, RFIDPROG, RFIDPAIE], valeurs: [1]}}
+  - {nom: LEVFIDEL, source: "R41:242-245", label: "Q41. Principal levier de fidélité (1 seul levier saisi par fiche)",
+     premier: {variables: [RFIDPRIX, RFIDQUAL, RFIDSTOC, RFIDCONS, RFIDSAVF, RFIDPROG, RFIDPAIE], valeur: 1}}
+  # ---- R41:317 : bloc achat en ligne vide (NB_NR, TX_REMPL, DOUBLON_SUSP, ID_CASE : calculés par la plateforme, analyse/controle.py)
+  - {nom: BLOC_WEB_VIDE, source: "R41:317", label: "[C] Bloc achat en ligne (Q37-Q39) entièrement vide", valeurs: {0: Non, 1: Oui},
+     calcul: "valeur(DEJACHLI) == 99 and valeur(PRETACLI) == 99 and valeur(PRFRACLI) == 99"}
+  # ---- R41:254-272 : marque, texte libre « Autre » intégré. R41:253 : « on retient la PREMIÈRE marque citée dans le texte ».
+  # SPSS ne voyait que 8 octets du texte (R41:35), ce qui revenait à ne lire que la 1re citation ; la plateforme a le texte
+  # complet : les tests de texte portent donc sur premiere_citation(MAACAUTR) (texte avant la 1re virgule ou le 1er « ; »).
+  # Ingelec (« contient GELEC/JELEC », pour Ingelec, Engelec, Injelec…) : sous 8 octets, ce test ne pouvait toucher que le
+  # 1er mot ; il porte donc sur premier_mot(MAACAUTR) (cas réel : « Schneider Legrand chint … ingelec », sans virgule).
+  - nom: MARQUE_G
+    source: "R41:254-272"
+    label: "Q12. Marque achetée le plus souvent (liste + texte libre recodé)"
+    manquants: [99]
+    valeurs: {1: Schneider, 2: Legrand, 3: "Chint / chinoise", 4: Philips, 5: Yaki, 6: Ingelec, 7: "Autres marques de la liste",
+              8: "Autres marques citées", 9: "Pas de marque fixe (selon dispo / demande)", 10: "Autre, sans précision", 99: NR}
+    etapes:
+      - {si: "valeur(MAACPLSO) == 1", valeur: 1}
+      - {si: "valeur(MAACPLSO) == 2", valeur: 2}
+      - {si: "valeur(MAACPLSO) == 7", valeur: 3}
+      - {si: "valeur(MAACPLSO) == 8", valeur: 4}
+      - {si: "valeur(MAACPLSO) in (3, 4, 5, 6, 9, 10, 11)", valeur: 7}
+      - {si: "valeur(MAACPLSO) == 99", valeur: 99}
+      - {si: "MAACPLSO == 12", valeur: 10}
+      - {si: "MAACPLSO == 12 and not vide(MAACAUTR)", valeur: 8}
+      - {si: "MAACPLSO == 12 and (commence(premiere_citation(MAACAUTR), 'YAK') or commence(premiere_citation(MAACAUTR), 'YAQ'))", valeur: 5}
+      - {si: "MAACPLSO == 12 and commence(premiere_citation(MAACAUTR), 'SCHNEID')", valeur: 1}
+      - {si: "MAACPLSO == 12 and commence(premiere_citation(MAACAUTR), 'LEGRAND')", valeur: 2}
+      - {si: "MAACPLSO == 12 and commence(premiere_citation(MAACAUTR), 'CHINT')", valeur: 3}
+      - {si: "MAACPLSO == 12 and commence(premiere_citation(MAACAUTR), 'PHILIPS')", valeur: 4}
+      - {si: "MAACPLSO == 12 and (contient(premier_mot(MAACAUTR), 'GELEC') or contient(premier_mot(MAACAUTR), 'JELEC'))", valeur: 6}
+      - {si: "MAACPLSO == 12 and (commence(premiere_citation(MAACAUTR), 'ANY ') or commence(premiere_citation(MAACAUTR), 'AVAILAB') or commence(premiere_citation(MAACAUTR), 'BASED') or commence(premiere_citation(MAACAUTR), 'CONSUMER') or commence(premiere_citation(MAACAUTR), 'DEMANDE') or commence(premiere_citation(MAACAUTR), 'DEPEND') or commence(premiere_citation(MAACAUTR), 'EN FONCT') or commence(premiere_citation(MAACAUTR), 'IL ACH') or commence(premiere_citation(MAACAUTR), 'IN TERMS') or commence(premiere_citation(MAACAUTR), 'JUSTE') or commence(premiere_citation(MAACAUTR), 'MANY') or commence(premiere_citation(MAACAUTR), 'MOST') or commence(premiere_citation(MAACAUTR), 'PRATIQUE') or commence(premiere_citation(MAACAUTR), 'TOUT'))", valeur: 9}
+  - nom: ORIG_MARQ
+    source: "R41:281-284"
+    label: "Origine de la marque achetée le plus souvent"
+    valeurs: {1: "Marque européenne", 2: "Marque asiatique", 3: "Origine non établie (Yaki, Ingelec, autres)", 4: "Pas de marque fixe"}
+    etapes:
+      - {si: "MARQUE_G in (1, 2, 4)", valeur: 1}
+      - {si: "MARQUE_G == 3", valeur: 2}
+      - {si: "MARQUE_G in (5, 6, 8, 10)", valeur: 3}
+      - {si: "MARQUE_G == 9", valeur: 4}
+      - {si: "MAACPLSO in (4, 5, 6)", valeur: 1}
+      - {si: "MAACPLSO in (9, 10, 11)", valeur: 2}
+      - {si: "MAACPLSO == 3", valeur: 3}
+  - {nom: MARQ_AC, source: "N05:100", label: "Marque achetée le plus souvent (regroupée pour l'AFC)",
+     recode: {source: MARQUE_G, regles: [[[1], 1], [[2], 2], [[3], 3], [[5], 4], [[4, 6, 7, 8, 10], 5], [[9], 6]]}}
+  # ---- V4:85-112 : indicateurs binaires (1 = oui, 0 = non)
+  - {nom: ONLIN_FERME, source: "V4:85", recode: {source: PRETACLI, regles: [[[1], 1], [[2, 3], 0]]}}
+  - {nom: ONLIN_POT, source: "V4:86", recode: {source: PRETACLI, regles: [[[1, 2], 1], [[3], 0]]}}
+  - {nom: DEJA_LIGNE, source: "V4:87", recode: {source: DEJACHLI, regles: [[[1], 1], [[2], 0]]}}
+  - {nom: SAV_OUI, source: "V4:88", recode: {source: BOSAPACH, regles: [[[1], 1], [[2, 3], 0]]}}
+  - {nom: SAV_POT, source: "V4:89", recode: {source: BOSAPACH, regles: [[[1, 2], 1], [[3], 0]]}}
+  - {nom: SAV_TRESIMP, source: "V4:90", recode: {source: IMSECSAV, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: MARQ_TRESIMP, source: "V4:91", recode: {source: IMPOMARQ, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: MONT_100K, source: "V4:92", recode: {source: MONMOYAC, regles: [[[3, 4, 5], 1], [[1, 2], 0]]}}
+  - {nom: HEBDO, source: "V4:93", recode: {source: FREQACHA, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: DECU, source: "V4:94", recode: {source: DEJDECAC, regles: [[[1, 2], 1], [[3], 0]]}}
+  - {nom: HAUTGAMME, source: "V4:95", recode: {source: GAACPLSO, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: FIDELE, source: "V4:96", recode: {source: FIMEFOUR, regles: [[[1, 2], 1], [[3, 4, 5], 0]]}}
+  - {nom: CRIT_QUAL, source: "V4:97", recode: {source: PRCRICHO, regles: [[[2], 1], [[1, 3, 4, 5, 6], 0]]}}
+  - {nom: CRIT_PRIX, source: "V4:98", recode: {source: PRCRICHO, regles: [[[1], 1], [[2, 3, 4, 5, 6], 0]]}}
+  - {nom: PREF_EUROPE, source: "V4:99", recode: {source: ORIGPRIV, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: PREF_ASIE, source: "V4:100", recode: {source: ORIGPRIV, regles: [[[2], 1], [[1, 3, 4], 0]]}}
+  - {nom: PREF_AUCUNE, source: "V4:101", recode: {source: ORIGPRIV, regles: [[[4], 1], [[1, 2, 3], 0]]}}
+  - {nom: CONTREF_SOUV, source: "V4:102", recode: {source: CRACPRCO, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: ESPECES, source: "V4:103", recode: {source: PAIEPRIV, regles: [[[1], 1], [[2, 3, 4], 0]]}}
+  - {nom: GARANT_1AN, source: "V4:104", recode: {source: DUGAJUAC, regles: [[[3, 4], 1], [[1, 2], 0]]}}
+  - {nom: SURCOUT_10, source: "V4:105", recode: {source: SUACMOGA, regles: [[[3, 4, 5], 1], [[1, 2], 0]]}}
+  - {nom: CONTACT_WA, source: "V4:106", recode: {source: CACOPREF, regles: [[[3], 1], [[1, 2, 4, 5], 0]]}}
+  - {nom: ACHAT_YAKI, source: "V4:107", recode: {source: MARQUE_G, regles: [[[5], 1], [[1, 2, 3, 4, 6, 7, 8, 9, 10], 0]]}}
+  - {nom: DILEMME, source: "V4:111-112",
+     etapes: [{si: "MEQUAFIA >= 1 and MEQUAFIA <= 3 and MEILPRIX >= 1 and MEILPRIX <= 3", valeur: "MEQUAFIA == 1 and MEILPRIX == 2"}]}
+  # ---- V4:144-153 : scores orientés ; V4:166-173 : indices 0-100
+  - {nom: S_MARQUE, source: "V4:144", mesure: ordinal, recode: {source: IMPOMARQ, regles: [[[1], 4], [[2], 3], [[3], 2], [[4], 1]]}}
+  - {nom: S_SAV, source: "V4:145", mesure: ordinal, recode: {source: IMSECSAV, regles: [[[1], 4], [[2], 3], [[3], 2], [[4], 1]]}}
+  - {nom: S_ORIGINE, source: "V4:146", mesure: ordinal, recode: {source: ORINFACH, regles: [[[1], 4], [[2], 3], [[3], 2], [[4], 1]]}}
+  - {nom: S_CONTREF, source: "V4:147", mesure: ordinal, recode: {source: CRACPRCO, regles: [[[1], 4], [[2], 3], [[3], 2], [[4], 1]]}}
+  - {nom: S_FIDEL, source: "V4:148", mesure: ordinal, recode: {source: FIMEFOUR, regles: [[[1], 5], [[2], 4], [[3], 3], [[4], 2], [[5], 1]]}}
+  - {nom: S_DECEP, source: "V4:149", mesure: ordinal, recode: {source: DEJDECAC, regles: [[[1], 3], [[2], 2], [[3], 1]]}}
+  - {nom: S_ONLINE, source: "V4:150", mesure: ordinal, recode: {source: PRETACLI, regles: [[[1], 3], [[2], 2], [[3], 1]]}}
+  - {nom: S_PAYSAV, source: "V4:151", mesure: ordinal, recode: {source: BOSAPACH, regles: [[[1], 3], [[2], 2], [[3], 1]]}}
+  - {nom: S_ECART, source: "V4:152", mesure: ordinal, recode: {source: ECQUHABA, regles: [[[1], 5], [[2], 4], [[3], 3], [[4], 2], [[5], 1]]}}
+  - {nom: S_FREQ, source: "V4:153", mesure: ordinal, recode: {source: FREQACHA, regles: [[[1], 4], [[2], 3], [[3], 2], [[4], 1]]}}
+  - {nom: IDX_MARQUE, source: "V4:166", mesure: scale, calcul: "(S_MARQUE - 1) / 3 * 100"}
+  - {nom: IDX_SAV, source: "V4:167", mesure: scale, calcul: "(S_SAV - 1) / 3 * 100"}
+  - {nom: IDX_ORIGINE, source: "V4:168", mesure: scale, calcul: "(S_ORIGINE - 1) / 3 * 100"}
+  - {nom: IDX_CONTREF, source: "V4:169", mesure: scale, calcul: "(S_CONTREF - 1) / 3 * 100"}
+  - {nom: IDX_FIDEL, source: "V4:170", mesure: scale, calcul: "(S_FIDEL - 1) / 4 * 100"}
+  - {nom: IDX_DECEP, source: "V4:171", mesure: scale, calcul: "(S_DECEP - 1) / 2 * 100"}
+  - {nom: IDX_ONLINE, source: "V4:172", mesure: scale, calcul: "(S_ONLINE - 1) / 2 * 100"}
+  - {nom: IDX_PAYSAV, source: "V4:173", mesure: scale, calcul: "(S_PAYSAV - 1) / 2 * 100"}
+  # ---- V4:186-190 : montants approchés (points milieux des tranches : HYPOTHÈSES à écrire dans le rapport)
+  - {nom: MONTANT_FCFA, source: "V4:186", mesure: scale,
+     recode: {source: MONMOYAC, regles: [[[1], 15000], [[2], 62500], [[3], 300000], [[4], 1250000], [[5], 3000000]]}}
+  - {nom: ACHATS_AN, source: "V4:187", mesure: scale, recode: {source: FREQACHA, regles: [[[1], 52], [[2], 24], [[3], 4], [[4], 1]]}}
+  - {nom: DEPENSE_AN, source: "V4:188", mesure: scale, calcul: "MONTANT_FCFA * ACHATS_AN"}
+  - {nom: SURCOUT_PCT, source: "V4:189", mesure: scale, recode: {source: SUACMOGA, regles: [[[1], 0], [[2], 5], [[3], 17.5], [[4], 37.5], [[5], 60]]}}
+  - {nom: GARANTIE_MOIS, source: "V4:190", mesure: scale, recode: {source: DUGAJUAC, regles: [[[1], 3], [[2], 9], [[3], 18], [[4], 30]]}}
+  # ---- N05:105-106 : le canal préféré est-il le canal actuel ?
+  - {nom: MEME_CANAL, source: "N05:105-106", etapes: [{si: "not manquant(LIEACHPR) and not manquant(CANAPREF)", valeur: "LIEACHPR == CANAPREF"}]}
+
+# Tableaux de résultats (plateforme analyse resultats). Uniquement des analyses des syntaxes livrées, vérifiées par le
+# test d'or (backend/tests/test_or_analyse.py) ; « source » renvoie à la ligne de la syntaxe d'origine.
+tableaux:
+  - {titre: "Profil des répondants", source: "V4:292", procedure: frequences, arguments: {variable: VOUSETES}}
+  - {titre: "Maillon de la chaîne", source: "V4:293", procedure: frequences, arguments: {variable: CATEG3}}
+  - {titre: "Répartition par ville", source: "V4:253", procedure: frequences, arguments: {variable: VILLEREG}}
+  - {titre: "Revenu mensuel du ménage (particuliers)", source: "V4:307", procedure: frequences, arguments: {variable: REVMEN_P}}
+  - {titre: "Fréquence d'achat selon le maillon", source: "V4:318", procedure: tri_croise, arguments: {ligne: FREQACHA, colonne: CATEG3}}
+  - {titre: "Lieu d'achat principal", source: "V4:324", procedure: frequences, arguments: {variable: LIEACHPR}}
+  - {titre: "Montant moyen par achat", source: "V4:330", procedure: frequences, arguments: {variable: MONMOYAC}}
+  - {titre: "Produits achetés (réponses multiples)", source: "V4:345", procedure: reponses_multiples,
+     arguments: {variables: [PRACCABL, PRACAPPA, PRACPRIS, PRACLUMI, PRACSOLA, PRACGROU]}}
+  - {titre: "Produits achetés par les entreprises", source: "R427:143", procedure: reponses_multiples, filtre: "PROFIL4 == 2",
+     arguments: {variables: [PRACCABL, PRACAPPA, PRACPRIS, PRACLUMI, PRACSOLA, PRACGROU]}}
+  - {titre: "Marque achetée le plus souvent", source: "V4:375", procedure: frequences, arguments: {variable: MARQUE_G}}
+  - {titre: "Marque achetée selon le maillon", source: "V4:377-378", procedure: tri_croise, arguments: {ligne: MARQUE_G, colonne: CATEG3}}
+  - {titre: "Origine de la marque achetée", source: "V4:403", procedure: frequences, arguments: {variable: ORIG_MARQ}}
+  - {titre: "Parts de marché en valeur (pondération par la dépense annuelle)", source: "R427:222-226", procedure: frequences,
+     arguments: {variable: MARQUE_G, poids: DEPENSE_AN}}
+  - {titre: "Disposition à payer le SAV selon le maillon", source: "V4:529", procedure: tri_croise, arguments: {ligne: BOSAPACH, colonne: CATEG3}}
+  - {titre: "Durée de garantie attendue selon la ville", source: "N05:266-267", procedure: tri_croise, arguments: {ligne: DUGAJUAC, colonne: VILLEREG}}
+  - {titre: "Dépense annuelle selon le profil", source: "R427:167-168", procedure: moyennes, arguments: {variable: DEPENSE_AN, par: PROFIL4}}
+  - {titre: "Surcoût accepté pour une meilleure garantie selon la ville", source: "N05:220", procedure: moyennes,
+     arguments: {variable: SURCOUT_PCT, par: VILLEREG}}
+  - {titre: "Carte des marques selon la ville (AFC)", source: "R427:219", procedure: correspondances, arguments: {ligne: MARQ_AC, colonne: VILLEREG}}
+  - {titre: "Facteurs d'achat en ligne (régression logistique)", source: "R427:282-296", procedure: logistique,
+     arguments: {dependante: ONLIN_FERME, explicatives: [VILLEREG, CATEG3, AGE3, SAV_TRESIMP, MONT_100K, DECU],
+                 categorielles: [VILLEREG, CATEG3, AGE3]}}
+  - {titre: "Le canal préféré est-il le canal actuel ?", source: "N05:296", procedure: frequences, arguments: {variable: MEME_CANAL}}

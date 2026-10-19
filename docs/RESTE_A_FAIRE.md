@@ -6,6 +6,17 @@
 - [x] Python 3.12.10 et `uv` 0.13.1 installés le 17/10/2026 (installateur Python à signature vérifiée).
 - [ ] Docker : nécessaire à partir de la phase 2 (PostgreSQL).
 
+## Phase 4 — limites connues
+- [ ] Ouvrir `BASE_COLLECTE.sav` et `BASE_ANALYSE_DERIVEES.sav` dans SPSS 27, et y exécuter les syntaxes `.sps` générées (poste équipé : question Q8).
+- [x] Régression linéaire, ANOVA à un facteur et test t de Student (variances égales) : validés le 18/10/2026 sur les valeurs certifiées du NIST (D-033).
+- [ ] Procédures M14 **sans test de référence**, donc non déclarées disponibles : tests de colonnes A/B/C avec Bonferroni, correction de Welch et test de Levene, post hoc de l'ANOVA, Wilcoxon, Pearson, régression pondérée et diagnostics (VIF, résidus), ACP et analyse factorielle, ACM, alpha de Cronbach, k-moyennes et CAH avec profilage, calage sur marges avec base effective et test de sensibilité. Il faut pour chacune une référence publiée ou calculée avec R ou SPSS.
+- [ ] Médiane pondérée (SPSS MEANS) : règle de SPSS à établir sur un cas de référence avant de la fournir.
+- [ ] Typologie remplaçant SEG_TS (TwoStep SPSS, non reproductible) : k-moyennes ou CAH documentées, à valider avec le fondateur.
+- [x] Tableaux de résultats déclarés dans le plan d'analyse (section `tableaux`) et commande `plateforme analyse resultats` (classeur Excel + syntaxe SPSS sans chemin, base active contrôlée) : faits le 18/10/2026.
+- [ ] Console web (frontend) : aucune ligne de code à ce jour ; prévue en phase 7 (D-006). Voir la question posée au fondateur le 18/10/2026.
+- [ ] Codification des questions ouvertes (IA propose, analyste valide) et volet quali de M14 : arrivent avec le module IA.
+- [ ] Q41 (leviers de fidélité) : le dictionnaire la déclare en choix multiple, mais chaque fiche n'a qu'un levier coché (R41:31-34, 429 sur 429). Le plan d'analyse la traite donc en réponse unique (LEVFIDEL). À vérifier dans le formulaire (cases à cocher ou bouton radio ?) avant une prochaine vague.
+
 ## Phase 3 — limites connues
 - [ ] **Automatisation horaire** (rapport provisoire chaque heure, définitif le soir, rattrapage toutes les 10 min) : nécessite la file de tâches (Procrastinate, D-006) et le déploiement ; aujourd'hui, `plateforme suivi produire` est lancé à la demande.
 - [ ] **Console web** du superviseur (tableau de bord temps réel, file `A_VERIFIER`, saisie des décisions et des résultats de rappels, notifications) : phase 7 (espaces client et usine).

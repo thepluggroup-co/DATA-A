@@ -1,4 +1,4 @@
-"""Ligne de commande de la phase 1 : `plateforme dictionnaire …`."""
+"""Ligne de commande : `plateforme dictionnaire | base | analyse | suivi | deploiement …`."""
 
 from __future__ import annotations
 
@@ -155,6 +155,65 @@ def _coder_base(args: argparse.Namespace) -> int:
     return 0
 
 
+def _jeux_analyse(args: argparse.Namespace) -> tuple[Any, Any, Any, Any, dict[str, str]]:
+    """(plan d'analyse, note de base, jeu de collecte, jeu d'analyse, formats SPSS du masque) depuis le tableur."""
+    from plateforme.analyse import plan as plan_analyse
+    from plateforme.analyse.controle import variables_controle
+    from plateforme.codification.qualite import ParametresBase, base_analyse
+    from plateforme.codification.rejeu import HORS_COMPTAGE
+
+    dico, terrain, _, fiches, decisions = _charger_base(args)
+    pa = plan_analyse.charger(args.plan_analyse)
+    retenues, note = base_analyse(dico, fiches, ParametresBase(), decisions)
+    controles = variables_controle(dico, fiches, terrain.jours, decisions=decisions)
+    cols = masque.colonnes_masque(dico, terrain.villes_masque())
+    valides = [f for f in fiches if f.statut not in HORS_COMPTAGE]
+    collecte = plan_analyse.jeu_depuis_fiches(cols, valides, pa, controles=controles)
+    analyse = plan_analyse.jeu_depuis_fiches(cols, retenues, pa, controles=controles)
+    return pa, note, collecte, analyse, {c.code: c.spss for c in cols if not c.spss.startswith("A")}
+
+
+def _analyse_base(args: argparse.Namespace) -> int:
+    """Bases SPSS d'analyse depuis le tableur : collecte (fiches valides, FILTRE_QUAL) et analyse (fiches retenues),
+    avec variables de contrôle de la plateforme et variables dérivées du plan d'analyse."""
+    from plateforme.analyse.exports import exporter_sav_jeu
+
+    try:
+        pa, note, collecte, analyse, formats = _jeux_analyse(args)
+    except DecisionsInconnues as e:
+        print("✘", e)
+        return 1
+    sortie = Path(args.sortie)
+    for nom, jd, texte in (("BASE_COLLECTE.sav", collecte, f"Base de collecte : {len(collecte.table)} fiches valides. {note.texte()}"),
+                           ("BASE_ANALYSE_DERIVEES.sav", analyse, note.texte())):
+        chemin = exporter_sav_jeu(jd, sortie / nom, formats=formats, libelle_fichier=nom.removesuffix(".sav"), note=texte)
+        print(f"✔ .sav relu et vérifié : {chemin.name} ({len(jd.table)} lignes, {len(jd.table.columns)} variables)")
+    print(f"{len(pa.derivations)} variables dérivées du plan d'analyse. {note.texte()}")
+    return 0
+
+
+def _analyse_resultats(args: argparse.Namespace) -> int:
+    """Tableaux du plan d'analyse sur la base d'analyse : classeur Excel + syntaxe SPSS équivalente (sans chemin)."""
+    from plateforme.analyse.exports import exporter_excel, exporter_syntaxe
+    from plateforme.analyse.tableaux import TableauInvalide, produire
+
+    try:
+        pa, note, _, analyse, _ = _jeux_analyse(args)
+        resultats = produire(pa.tableaux, analyse)
+    except (DecisionsInconnues, TableauInvalide) as e:
+        print("✘", e)
+        return 1
+    if not resultats:
+        print("✘ le plan d'analyse ne déclare aucun tableau (section « tableaux »)")
+        return 1
+    sortie = Path(args.sortie)
+    xlsx = exporter_excel(resultats, analyse, sortie / "RESULTATS.xlsx")
+    sps = exporter_syntaxe(resultats, sortie / "RESULTATS.sps", base_attendue=len(analyse.table), nom_base="BASE_ANALYSE_DERIVEES.sav")
+    print(f"✔ {len(resultats)} tableaux : {xlsx.name}, {sps.name} → {sortie}")
+    print(note.texte())
+    return 0
+
+
 def _suivi(args: argparse.Namespace) -> int:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -248,6 +307,22 @@ def main(argv: list[str] | None = None) -> int:
     bc.add_argument("--decisions", help="YAML {N° de fiche: {statut: OK|REJETE|ANNULEE|EXCLUE, motif: …}}")
     bc.add_argument("--sortie", required=True)
     bc.set_defaults(f=_coder_base)
+    an = sous.add_parser("analyse").add_subparsers(dest="action", required=True)
+    ab = an.add_parser("base", help="bases SPSS de collecte et d'analyse, variables dérivées du plan d'analyse comprises")
+    ab.add_argument("tableur")
+    ab.add_argument("--onglet", default="Form Responses 1")
+    ab.add_argument("--dictionnaire", required=True)
+    ab.add_argument("--plan-terrain", required=True)
+    ab.add_argument("--plan-analyse", required=True)
+    ab.add_argument("--decisions")
+    ab.add_argument("--sortie", required=True)
+    ab.set_defaults(f=_analyse_base)
+    ar = an.add_parser("resultats", help="tableaux du plan d'analyse : classeur Excel et syntaxe SPSS équivalente")
+    for nom, options in (("tableur", {}), ("--onglet", {"default": "Form Responses 1"}), ("--dictionnaire", {"required": True}),
+                         ("--plan-terrain", {"required": True}), ("--plan-analyse", {"required": True}), ("--decisions", {}),
+                         ("--sortie", {"required": True})):
+        ar.add_argument(nom, **options)
+    ar.set_defaults(f=_analyse_resultats)
     su = sous.add_parser("suivi").add_subparsers(dest="action", required=True)
     sp = su.add_parser("produire", help="tableau de bord, rapport journalier, état des enquêteurs, effet enquêteur, rappels")
     sp.add_argument("tableur")
