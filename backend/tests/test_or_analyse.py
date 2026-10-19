@@ -228,6 +228,7 @@ def test_regression_logistique(jd: JeuDonnees) -> None:
     assert (round(mont[0], 1), round(mont[1], 1), round(mont[2], 1)) == (2.4, 1.2, 4.9)
     assert (round(baf[0], 2), round(baf[1], 2), round(baf[2], 2)) == (0.23, 0.09, 0.61)
     assert round(r.r2_nagelkerke, 2) == 0.23
+    assert (r.hosmer_lemeshow[1], round(r.hosmer_lemeshow[2], 3)) == (8, 0.004)                # N08_A_RAPPORT_427.sps:314
 
 
 def test_meme_canal(jd: JeuDonnees) -> None:

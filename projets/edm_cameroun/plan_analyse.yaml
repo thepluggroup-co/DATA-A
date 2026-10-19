@@ -10,6 +10,12 @@ manquants:
   defaut: [99]
   REVMENME: [97, 98, 99]
 
+# Résultats enregistrés de traitements non reproductibles, lus dans le .sav d'analyse livré (privé, hors Git) et rattachés
+# par le N° de fiche (D-046). SEG_TS : groupes du TWOSTEP CLUSTER SPSS (EDM_EE_ANALYSES_N05_FILTREES.sps:358-368), qui
+# dépendent de l'ordre des fiches : relancer l'algorithme donnerait d'autres groupes que ceux du rapport livré.
+imports:
+  - {variable: SEG_TS, fichier: ../../reference/prive/sav/SPSS_EDM_EE_V6_ANALYSE_427.sav, cle: NUMFICHE,
+     source: "EDM_EE_ANALYSES_N05_FILTREES.sps:358-368 (TWOSTEP, 4 groupes, /SAVE VARIABLE=SEG_TS)"}
 derivations:
   # ---- R41, partie 5 : groupes de profils
   - {nom: PROFIL4, source: "R41:214", label: "Profil (4 groupes : PME et BTP fusionnés)",
@@ -75,7 +81,26 @@ derivations:
       - {si: "MAACPLSO in (4, 5, 6)", valeur: 1}
       - {si: "MAACPLSO in (9, 10, 11)", valeur: 2}
       - {si: "MAACPLSO == 3", valeur: 3}
-  - {nom: MARQ_AC, source: "N05:100", label: "Marque achetée le plus souvent (regroupée pour l'AFC)",
+  # ---- rapport V14, graphique 9 (p. 25) : trois origines (non établie et sans marque fixe réunies)
+  - {nom: ORIG_MARQ3, source: "rapport V14, graphique 9", label: "Origine de la marque achetée le plus souvent (3 groupes)",
+     recode: {source: ORIG_MARQ, regles: [[[1], 1], [[2], 2], [[3, 4], 3]]},
+     valeurs: {1: "Marques européennes", 2: "Marques asiatiques", 3: "Origine non vérifiée / sans marque fixe (Yaki, autres)"}}
+  # ---- rapport V14, graphiques 41-42 (p. 42) : 7 groupes de marques (effectifs du graphique natif Word vérifiés)
+  - {nom: MARQ_G7, source: "rapport V14, graphiques 41-42", label: "Marque achetée le plus souvent (7 groupes)",
+     valeurs: {1: Schneider, 2: Yaki, 3: "Chint / chinoises", 4: Legrand, 5: "Autres / sans marque fixe", 6: Philips, 7: "Autres référencées"},
+     recode: {source: MARQUE_G, regles: [[[1], 1], [[5], 2], [[3], 3], [[2], 4], [[6, 8, 9, 10], 5], [[4], 6], [[7], 7]]}}
+  # ---- N08_A_RAPPORT_427.sps:273-279 : effet enquêteur à Douala (ENQ1 contre les autres enquêteurs de la ville)
+  - nom: ENQ_DLA
+    source: "N08:273-275"
+    label: "Enquêteur à Douala (ENQ1 / autres)"
+    valeurs: {1: ENQ1, 2: "Autres enquêteurs"}
+    etapes:
+      - {si: "VILLEREG == 1", valeur: 2}
+      - {si: "VILLEREG == 1 and NUMENQUE == 1", valeur: 1}
+  - {nom: SAV_PASIMP, source: "N08:277", label: "Juge le SAV « pas important »",
+     recode: {source: IMSECSAV, regles: [[[4], 1], [[1, 2, 3], 0]]}}
+  - {nom: MARQ_AC, source: "N05:100-103", label: "Marque achetée le plus souvent (regroupée pour l'AFC)",
+     valeurs: {1: Schneider, 2: Legrand, 3: "Chint / chinoise", 4: Yaki, 5: "Autres marques", 6: "Pas de marque fixe"},
      recode: {source: MARQUE_G, regles: [[[1], 1], [[2], 2], [[3], 3], [[5], 4], [[4, 6, 7, 8, 10], 5], [[9], 6]]}}
   # ---- V4:85-112 : indicateurs binaires (1 = oui, 0 = non)
   - {nom: ONLIN_FERME, source: "V4:85", recode: {source: PRETACLI, regles: [[[1], 1], [[2, 3], 0]]}}
@@ -130,7 +155,41 @@ derivations:
   - {nom: SURCOUT_PCT, source: "V4:189", mesure: scale, recode: {source: SUACMOGA, regles: [[[1], 0], [[2], 5], [[3], 17.5], [[4], 37.5], [[5], 60]]}}
   - {nom: GARANTIE_MOIS, source: "V4:190", mesure: scale, recode: {source: DUGAJUAC, regles: [[[1], 3], [[2], 9], [[3], 18], [[4], 30]]}}
   # ---- N05:105-106 : le canal préféré est-il le canal actuel ?
-  - {nom: MEME_CANAL, source: "N05:105-106", etapes: [{si: "not manquant(LIEACHPR) and not manquant(CANAPREF)", valeur: "LIEACHPR == CANAPREF"}]}
+  - {nom: MEME_CANAL, source: "N05:105-108", label: "Canal préféré = canal d'achat actuel",
+     valeurs: {0: "Non : souhaite changer de canal", 1: "Oui : même canal"}, etapes: [{si: "not manquant(LIEACHPR) and not manquant(CANAPREF)", valeur: "LIEACHPR == CANAPREF"}]}
+  # ---- N08 = N08_A_RAPPORT_427.sps. N08:52-63 : indicateurs 0/1 de la synthèse (tableau S1) et du tableau 2 bis
+  - {nom: R_CONTREF, source: "N08:52", label: "Craint la contrefaçon (souvent ou parfois)", recode: {source: CRACPRCO, regles: [[[1, 2], 1], [[3, 4], 0]]}}
+  - {nom: R_REFUS10, source: "N08:53", label: "Refuse un surcoût de plus de 10 %", recode: {source: SUACMOGA, regles: [[[1, 2], 1], [[3, 4, 5], 0]]}}
+  - {nom: R_MOYGAM, source: "N08:54", label: "Achète surtout de la moyenne gamme", recode: {source: GAACPLSO, regles: [[[2], 1], [[1, 3, 4], 0]]}}
+  - {nom: R_SCHNEI, source: "N08:55", label: "Schneider, marque la plus achetée",
+     recode: {source: MARQUE_G, regles: [[[1], 1], [[2, 3, 4, 5, 6, 7, 8, 9, 10], 0]]}}
+  - {nom: R_GARREM, source: "N08:56", label: "Garantie avec remplacement, premier service attendu",
+     recode: {source: SEATPRIO, regles: [[[1], 1], [[2, 3, 4, 5], 0]]}}
+  - {nom: R_GROSSI, source: "N08:57", label: "Achète d'abord chez un grossiste spécialisé", recode: {source: LIEACHPR, regles: [[[2], 1], [[1, 3, 4, 5, 6], 0]]}}
+  # ---- N08:65-74 : les mêmes indicateurs en % (0 ou 100) : leur moyenne se lit directement en %
+  - {nom: P_DECU, source: "N08:65-74", label: "Déjà déçus par un achat (%)", mesure: scale, calcul: "100 * DECU"}
+  - {nom: P_CONTREF, source: "N08:65-74", label: "Craignent la contrefaçon, souvent ou parfois (%)", mesure: scale, calcul: "100 * R_CONTREF"}
+  - {nom: P_QUAL, source: "N08:65-74", label: "Qualité / durabilité, premier critère (%)", mesure: scale, calcul: "100 * CRIT_QUAL"}
+  - {nom: P_REFUS10, source: "N08:65-74", label: "Refusent un surcoût de plus de 10 % (%)", mesure: scale, calcul: "100 * R_REFUS10"}
+  - {nom: P_MOYGAM, source: "N08:65-74", label: "Achètent surtout de la moyenne gamme (%)", mesure: scale, calcul: "100 * R_MOYGAM"}
+  - {nom: P_SCHNEI, source: "N08:65-74", label: "Schneider, marque la plus achetée (%)", mesure: scale, calcul: "100 * R_SCHNEI"}
+  - {nom: P_YAKI, source: "N08:65-74", label: "Yaki, deuxième marque achetée (%)", mesure: scale, calcul: "100 * ACHAT_YAKI"}
+  - {nom: P_GARREM, source: "N08:65-74", label: "Garantie avec remplacement, 1er service attendu (%)", mesure: scale, calcul: "100 * R_GARREM"}
+  - {nom: P_GROSSI, source: "N08:65-74", label: "Achètent d'abord chez un grossiste (%)", mesure: scale, calcul: "100 * R_GROSSI"}
+  - {nom: P_ONLINE, source: "N08:65-74", label: "Prêts à acheter en ligne (%)", mesure: scale, calcul: "100 * ONLIN_FERME"}
+  # ---- rapport V14, graphique 37 (p. 39) : part des réponses « très important / important » (0 ou 100)
+  - {nom: P_IMPSAV, source: "rapport V14, graphique 37", label: "Service après-vente important ou très important (%)", mesure: scale,
+     recode: {source: IMSECSAV, regles: [[[1, 2], 100], [[3, 4], 0]]}}
+  - {nom: P_IMPMARQ, source: "rapport V14, graphique 37", label: "Marque importante ou très importante (%)", mesure: scale,
+     recode: {source: IMPOMARQ, regles: [[[1, 2], 100], [[3, 4], 0]]}}
+  - {nom: P_ECARTQ, source: "rapport V14, graphique 37", label: "Écart de qualité entre gammes important ou très important (%)", mesure: scale,
+     recode: {source: ECQUHABA, regles: [[[1, 2], 100], [[3, 4, 5], 0]]}}
+  - {nom: P_INFLORIG, source: "rapport V14, graphique 37", label: "L'origine influence fortement ou modérément l'achat (%)", mesure: scale,
+     recode: {source: ORINFACH, regles: [[[1, 2], 100], [[3, 4], 0]]}}
+  # ---- N08:92-103 : poids « chaque groupe pèse autant » du tableau 2 bis = (N / nombre de groupes) / effectif du groupe
+  - {nom: W_PROF, source: "N08:101", label: "Poids : profils égaux", mesure: scale, calcul: "(nb_fiches() / 4) / effectif_groupe(PROFIL4)"}
+  - {nom: W_MAIL, source: "N08:102", label: "Poids : maillons égaux", mesure: scale, calcul: "(nb_fiches() / 3) / effectif_groupe(CATEG3)"}
+  - {nom: W_VILL, source: "N08:103", label: "Poids : villes égales", mesure: scale, calcul: "(nb_fiches() / 3) / effectif_groupe(VILLEREG)"}
 
 # Tableaux de résultats (plateforme analyse resultats). Uniquement des analyses des syntaxes livrées, vérifiées par le
 # test d'or (backend/tests/test_or_analyse.py) ; « source » renvoie à la ligne de la syntaxe d'origine.

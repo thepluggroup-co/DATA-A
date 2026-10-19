@@ -1,5 +1,5 @@
 # PROMPT DE PRODUCTION — PLATEFORME D'ÉTUDES DE MARCHÉ DE BOUT EN BOUT, EN ABONNEMENT
-### Nom de travail : `[NOM_PRODUIT]` (choix en cours : SONDAXIS · NOVASONDE · MBOA PULSE — ancien nom : PLUG DATA'A)
+### Nom du produit : **DATA'A** — « Des données aux décisions » (choisi le 19/10/2026, D-038 ; écartés : SONDAXIS · NOVASONDE · MBOA PULSE)
 Version 2 — 17/10/2026 — THE PLUG (Douala) — remplace la V1
 
 > **Mode d'emploi** : enregistrer ce texte à la racine du dépôt sous le nom `CLAUDE.md` (Claude Code dans VS Code ou en terminal) et placer les fichiers de la section 3 dans `/reference`. L'agent suit les phases de la section 11 et **s'arrête à chaque porte de validation**. Remplacer `[NOM_PRODUIT]` partout dès que le nom est choisi.

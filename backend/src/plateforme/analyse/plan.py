@@ -19,11 +19,39 @@ CHAMPS = {"nom", "label", "valeurs", "manquants", "mesure", "recode", "calcul", 
 
 
 @dataclass
+class Import:
+    """Résultat enregistré d'un traitement non reproductible (ex. groupes d'un TWOSTEP SPSS, qui dépendent de l'ordre des
+    fiches) : variable lue dans un .sav livré, rattachée fiche par fiche par une clé (N° de fiche), jamais recalculée."""
+    variable: str
+    fichier: Path
+    cle: str
+    source: str
+
+
+@dataclass
 class PlanAnalyse:
     manquants_defaut: list[float] = field(default_factory=list)
     manquants: dict[str, list[float]] = field(default_factory=dict)
     derivations: list[Derivation] = field(default_factory=list)
     tableaux: list[Tableau] = field(default_factory=list)
+    imports: list[Import] = field(default_factory=list)
+
+
+def importer(jd: JeuDonnees, imp: Import) -> JeuDonnees:
+    """Ajoute la variable importée (étiquettes de valeurs et libellé du .sav) ; une fiche absente du fichier reste manquante.
+    Clé en double dans le fichier : refus (rattachement ambigu)."""
+    import pandas as pd
+    import pyreadstat
+
+    df, meta = pyreadstat.read_sav(str(imp.fichier), usecols=[imp.cle, imp.variable])
+    cles = df[imp.cle].astype(str).str.strip()
+    if cles.duplicated().any():
+        raise ValueError(f"import {imp.variable} : clé {imp.cle} en double dans {imp.fichier.name}")
+    correspondance = dict(zip(cles, df[imp.variable], strict=True))
+    valeurs = pd.to_numeric(jd.table[imp.cle].astype(str).str.strip().map(correspondance), errors="coerce")
+    variable = Variable(imp.variable, meta.column_names_to_labels.get(imp.variable) or imp.variable,
+                        {float(k): str(v) for k, v in (meta.variable_value_labels.get(imp.variable) or {}).items()})
+    return jd.avec_variable(imp.variable, valeurs, variable)
 
 
 def charger(chemin: str | Path) -> PlanAnalyse:
@@ -39,7 +67,13 @@ def charger(chemin: str | Path) -> PlanAnalyse:
                                       manquants=[float(x) for x in d.get("manquants", [])], mesure=d.get("mesure", "nominal"),
                                       recode=d.get("recode"), calcul=d.get("calcul"), etapes=d.get("etapes"), compte=d.get("compte"),
                                       premier=d.get("premier"), source=d.get("source", "")))
-    return PlanAnalyse(defaut, {k: [float(x) for x in v] for k, v in m.items()}, derivations, depuis_yaml(brut.get("tableaux") or []))
+    imports = []
+    for i in brut.get("imports") or []:
+        if set(i) != {"variable", "fichier", "cle", "source"}:
+            raise ValueError(f"import {i.get('variable')} : champs attendus variable, fichier, cle, source")
+        imports.append(Import(str(i["variable"]), (Path(chemin).parent / str(i["fichier"])).resolve(), str(i["cle"]), str(i["source"])))
+    return PlanAnalyse(defaut, {k: [float(x) for x in v] for k, v in m.items()}, derivations, depuis_yaml(brut.get("tableaux") or []),
+                       imports)
 
 
 def jeu_depuis_fiches(colonnes: list[Colonne], fiches: list[FicheCodee], plan: PlanAnalyse, deriver: bool = True,
@@ -62,4 +96,7 @@ def jeu_depuis_fiches(colonnes: list[Colonne], fiches: list[FicheCodee], plan: P
             table[nom] = pd.to_numeric(pd.Series([valeurs.get(f.id_reponse, {}).get(nom) for f in fiches], index=table.index), errors="coerce")
             variables[nom] = meta
     jd = JeuDonnees(table, variables, description=f"base codée ({len(fiches)} fiches)")
+    for imp in plan.imports:                       # fichier absent (poste sans données privées) : variable non disponible
+        if imp.fichier.exists() and imp.cle in jd.table.columns:
+            jd = importer(jd, imp)
     return appliquer(jd, plan.derivations) if deriver else jd

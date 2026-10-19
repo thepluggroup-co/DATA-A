@@ -20,13 +20,22 @@ from openpyxl.worksheet.worksheet import Worksheet
 from plateforme.analyse.donnees import JeuDonnees
 from plateforme.analyse.procedures import (
     Anova,
+    Batterie,
     Correspondances,
     Frequences,
+    Indicateurs,
     Logistique,
     Moyenne,
+    PartsBootstrap,
+    QuotasRealises,
+    Recapitulatif,
     RegressionLineaire,
+    Remplissage,
+    Repartitions,
     ReponsesMultiples,
     Resultat,
+    Sensibilite,
+    SyntheseKhi2,
     TestStatistique,
     TriCroise,
 )
@@ -51,6 +60,16 @@ def _n(x: float, decimales: int = 1) -> float | None:
     return None if x is None or (isinstance(x, float) and math.isnan(x)) else round(float(x), decimales)
 
 
+def _pct(x: float) -> str:
+    """« 66,7 % » : pourcentage écrit à la française, une décimale."""
+    return f"{x:.1f}".replace(".", ",") + " %"
+
+
+def _e(x: float) -> int | None:
+    """Effectif ou base : entier (un effectif pondéré est arrondi à l'unité, comme l'affichage de SPSS)."""
+    return None if x is None or (isinstance(x, float) and math.isnan(x)) else round(float(x))
+
+
 def _entete(ws: Worksheet, titres: Sequence[str]) -> None:
     ws.append(list(titres))
     for c in ws[ws.max_row]:
@@ -70,7 +89,7 @@ def _lignes(r: Resultat, jd: JeuDonnees) -> tuple[list[str], list[list[Any]], li
         cols = [jd.libelle(r.colonne, c) for c in r.codes_colonnes]
         lignes = []
         for i, code in enumerate(r.codes_lignes):
-            lignes.append([code, jd.libelle(r.ligne, code), "Effectif", *[_n(v, 0) for v in r.effectifs[i]]])
+            lignes.append([code, jd.libelle(r.ligne, code), "Effectif", *[_e(v) for v in r.effectifs[i]]])
             lignes.append(["", "", "% colonne", *[_n(v) for v in r.pct_colonne[i]]])
             if r.residus_ajustes:
                 lignes.append(["", "", "Résidu ajusté", *[_n(v, 2) for v in r.residus_ajustes[i]]])
@@ -78,8 +97,8 @@ def _lignes(r: Resultat, jd: JeuDonnees) -> tuple[list[str], list[list[Any]], li
                  ["Part des effectifs théoriques < 5 (%)", _n(100 * r.part_theoriques_faibles)]]
         return ["Code", r.ligne, "", *cols], lignes, stats
     if isinstance(r, Moyenne):
-        lignes = [["Ensemble", "", _n(r.moyenne, 2), _n(r.mediane, 2), _n(r.effectif, 0)]]
-        lignes += [[code, "", _n(m, 2), _n(med, 2), _n(n, 0)] for code, (m, med, n) in r.groupes.items()]
+        lignes = [["Ensemble", "", _n(r.moyenne, 2), _n(r.mediane, 2), _e(r.effectif)]]
+        lignes += [[code, "", _n(m, 2), _n(med, 2), _e(n)] for code, (m, med, n) in r.groupes.items()]
         return ["Groupe", "Libellé", "Moyenne", "Médiane", "N"], lignes, []
     if isinstance(r, ReponsesMultiples):
         lignes = [[v, jd.variables[v].label if v in jd.variables else v, _n(r.pct_observations[v]), _n(r.pct_reponses[v])] for v in r.variables]
@@ -87,11 +106,27 @@ def _lignes(r: Resultat, jd: JeuDonnees) -> tuple[list[str], list[list[Any]], li
     if isinstance(r, TestStatistique):
         return ["Statistique", "ddl", "p"], [[_n(r.statistique, 3), r.ddl, _n(r.p, 4)]], [[k, v] for k, v in r.detail.items()]
     if isinstance(r, Correspondances):
-        return ["Axe", "% d'inertie"], [[k, _n(v)] for k, v in enumerate(r.part_axes, start=1)], [["Inertie totale", _n(r.inertie_totale, 3)]]
+        lignes_c = [[k, _n(v)] for k, v in enumerate(r.part_axes, start=1)]
+        points = [[f"{jd.libelle(r.ligne, c)} (ligne)", *[_n(x, 2) for x in xy]] for c, xy in r.points_lignes.items()]
+        points += [[f"{jd.libelle(r.colonne, c)} (colonne)", *[_n(x, 2) for x in xy]] for c, xy in r.points_colonnes.items()]
+        return (["Axe ou point", "% d'inertie ou dimension 1", "Dimension 2"], [*lignes_c, *points],
+                [["Inertie totale", _n(r.inertie_totale, 3)]])
+    if isinstance(r, Repartitions):
+        codes = sorted({li.code for f in r.parts.values() for li in f.lignes})
+        lignes_r = []
+        for titre, freq in r.parts.items():
+            parts = {li.code: li.pourcentage for li in freq.lignes}
+            lignes_r.append([titre, *[_n(parts.get(c, 0.0)) for c in codes], freq.base])
+        return ["Sous-population", *[f"{jd.libelle(r.variable, c)} (%)" for c in codes], "Base (n)"], lignes_r, []
+    if isinstance(r, PartsBootstrap):
+        return (["Groupe", "Part (%)", "IC 95 % bas", "IC 95 % haut"],
+                [[titre, _n(pt), _n(b), _n(h)] for titre, (pt, b, h) in r.parts.items()], [])
     if isinstance(r, Logistique):
         lignes = [[terme, _n(e, 2), _n(b, 2), _n(h, 2), _n(p, 4)] for terme, (e, b, h, p) in r.coefficients.items()]
         return (["Terme", "Exp(B)", "IC 95 % bas", "IC 95 % haut", "p"], lignes,
-                [["R² de Cox-Snell", _n(r.r2_cox_snell, 3)], ["R² de Nagelkerke", _n(r.r2_nagelkerke, 3)]])
+                [["R² de Cox-Snell", _n(r.r2_cox_snell, 3)], ["R² de Nagelkerke", _n(r.r2_nagelkerke, 3)],
+                 ["Hosmer-Lemeshow : khi-deux", _n(r.hosmer_lemeshow[0], 3)], ["Hosmer-Lemeshow : ddl", r.hosmer_lemeshow[1]],
+                 ["Hosmer-Lemeshow : p", _n(r.hosmer_lemeshow[2], 4)]])
     if isinstance(r, RegressionLineaire):
         lignes = [[terme, _n(b, 6), _n(e, 6), _n(p, 4)] for terme, (b, e, p) in r.coefficients.items()]
         return (["Terme", "B", "Erreur type", "p"], lignes,
@@ -102,6 +137,72 @@ def _lignes(r: Resultat, jd: JeuDonnees) -> tuple[list[str], list[list[Any]], li
         return (["Groupe", "Libellé", "Moyenne", "N"], lignes,
                 [["Somme des carrés inter", _n(r.sc_inter, 4)], ["Somme des carrés intra", _n(r.sc_intra, 4)],
                  ["ddl", f"{r.ddl[0]} ; {r.ddl[1]}"], ["F", _n(r.f, 3)], ["p", _n(r.p, 4)], ["R² (êta²)", _n(r.r2, 4)]])
+    if isinstance(r, Batterie):
+        codes = sorted({li.code for f in r.frequences.values() for li in f.lignes})
+        premiere = r.variables[0]
+        modalites = [jd.libelle(premiere, c) for c in codes]
+        lignes = []
+        for v in r.variables:
+            freq = r.frequences[v]
+            parts = {li.code: li.pourcentage for li in freq.lignes}
+            lignes.append([v, jd.variables[v].label if v in jd.variables and jd.variables[v].label else v,
+                           *[_n(parts.get(c, 0.0)) for c in codes], freq.base])
+        return ["Variable", "Question", *[f"{m} (%)" for m in modalites], "Base (n)"], lignes, []
+    if isinstance(r, QuotasRealises):
+        villes = [jd.libelle(r.ville, v) for v in r.codes_villes]
+        tot_r, tot_p = sum(map(sum, r.realise)), sum(map(sum, r.prevu))
+        lignes = [[jd.libelle(r.cible, c), *[f"{r.realise[i][j]} / {r.prevu[i][j]}" for j in range(len(villes))],
+                   f"{sum(r.realise[i])} / {sum(r.prevu[i])}", _n(100 * sum(r.realise[i]) / tot_r if tot_r else math.nan)]
+                  for i, c in enumerate(r.codes_cibles)]
+        lignes.append(["Total", *[f"{sum(r.realise[i][j] for i in range(len(r.codes_cibles)))} / "
+                                  f"{sum(r.prevu[i][j] for i in range(len(r.codes_cibles)))}" for j in range(len(villes))],
+                       f"{tot_r} / {tot_p}", 100.0])
+        return ["Cibles (réalisé / prévu)", *villes, "Total", "%"], lignes, []
+    if isinstance(r, Sensibilite):
+        return (["Variable", "Indicateur (base)", "Non pondéré (%)", *[f"{c} (%)" for c in r.colonnes], "Écart max (pt)"],
+                [[v, f"{lib} ({_e(n)})", _n(m), *[_n(x[c]) for c in r.colonnes], _n(e)] for v, lib, n, m, x, e in r.lignes], [])
+    if isinstance(r, Indicateurs):
+        if r.ic95:                                   # repère arrondi à l'entier, comme le tableau S1 livré (« 76 – 84 % »)
+            return (["Variable", "Indicateur", "Résultat (%)", "Base (n)", "Repère IC 95 %"],
+                    [[v, lib, _n(m), _e(n), f"{round(r.ic95[v][0])} – {round(r.ic95[v][1])} %"] for v, lib, m, n in r.lignes], [])
+        return ["Variable", "Indicateur", "Valeur", "Base"], [[v, lib, _n(m), _e(n)] for v, lib, m, n in r.lignes], []
+    if isinstance(r, SyntheseKhi2):
+        # Format du tableau 5 du rapport EDM : une ligne par question, « V (p) » par critère ; n.s. = non significatif
+        # (p ≥ 0,05) ; * = plus de 20 % d'effectifs théoriques < 5 ; K-W = p de Kruskal-Wallis ; case qui fait l'écart.
+        def vp(cv: float, p: float, f: float, cle: tuple[str, str]) -> str:
+            texte = f"{cv:.2f} ({'< 0,001' if p < 0.001 else f'{p:.3f}'})".replace(".", ",")
+            texte += " n.s." if p >= 0.05 else ""
+            texte += " *" if f > 0.20 else ""
+            if cle in r.kruskal:
+                kw = r.kruskal[cle]
+                texte += f" ; K-W {'< 0,001' if kw < 0.001 else f'{kw:.3f}'.replace('.', ',')}"
+            return texte
+
+        par_var: dict[str, dict[str, tuple[int, float, float, float]]] = {}
+        for v, g, n, _, _, p, cv, f in r.lignes:
+            par_var.setdefault(v, {})[g] = (n, p, cv, f)
+        lignes = []
+        for v, groupes in par_var.items():
+            ecart = r.ecarts.get(v)
+            case = f"{ecart[0]} à {ecart[1]} : {ecart[2]:.1f} % ({ecart[3]:+.1f})".replace(".", ",").replace("(-", "(−") if ecart else "—"
+            lignes.append([v, jd.variables[v].label if v in jd.variables and jd.variables[v].label else v, groupes[r.par[0]][0],
+                           *[vp(groupes[g][2], groupes[g][1], groupes[g][3], (v, g)) for g in r.par], case])
+        titres = [jd.variables[g].label if g in jd.variables and jd.variables[g].label else g for g in r.par]
+        return (["Variable", "Question (réponses valides)", "Base (n)", *[f"{t} : V (p)" for t in titres],
+                 "Case qui fait l'écart (résidu ajusté)"], lignes, [])
+    if isinstance(r, Remplissage):
+        lignes, groupe = [], None
+        for k, (g, v, lib, _, rep_, nsp, nr) in enumerate(r.lignes, start=1):
+            if g != groupe:
+                lignes.append(["", g.upper(), None, None, None])
+                groupe = g
+            lignes.append([k, f"{lib} ({v})", _pct(rep_), "—" if nsp is None else _pct(nsp), _pct(nr)])
+        stats = [["Variables couvertes", f"{len(r.lignes)} / {r.attendu}"]] if r.attendu is not None else []
+        return ["#", "Variable (nom SPSS)", "Réponses", "Sans avis / NSP (98)", "Non-réponse (99)"], lignes, stats
+    if isinstance(r, Recapitulatif):
+        stats = [["Variables couvertes", f"{len(r.lignes)} / {r.attendu}"]] if r.attendu is not None else []
+        return (["Variable", "Libellé", "Base", "Modalité principale", "%"],
+                [[v, lib, n, mod, _n(pct)] for v, lib, n, mod, pct in r.lignes], stats)
     raise TypeError(f"résultat non exportable : {type(r).__name__}")
 
 

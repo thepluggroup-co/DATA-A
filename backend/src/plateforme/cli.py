@@ -165,7 +165,7 @@ def _jeux_analyse(args: argparse.Namespace) -> tuple[Any, Any, Any, Any, dict[st
     dico, terrain, _, fiches, decisions = _charger_base(args)
     pa = plan_analyse.charger(args.plan_analyse)
     retenues, note = base_analyse(dico, fiches, ParametresBase(), decisions)
-    controles = variables_controle(dico, fiches, terrain.jours, decisions=decisions)
+    controles = variables_controle(dico, fiches, terrain.jours, decisions=decisions, enqueteurs=[e.id for e in terrain.enqueteurs])
     cols = masque.colonnes_masque(dico, terrain.villes_masque())
     valides = [f for f in fiches if f.statut not in HORS_COMPTAGE]
     collecte = plan_analyse.jeu_depuis_fiches(cols, valides, pa, controles=controles)
@@ -214,6 +214,39 @@ def _analyse_resultats(args: argparse.Namespace) -> int:
     return 0
 
 
+def _rapport_produire(args: argparse.Namespace) -> int:
+    """Rapport déclaré du projet → contrôles bloquants → Word, présentation, PDF. Rien n'est écrit si un contrôle bloque."""
+    from plateforme.analyse.rapport import chargeur
+    from plateforme.analyse.rapport.rendus import RapportBloque, charger_charte, charte_par_defaut, produire
+    from plateforme.analyse.tableaux import TableauInvalide
+
+    try:
+        _, note, collecte, analyse, _ = _jeux_analyse(args)
+        jeux = {"analyse": analyse, "collecte": collecte}
+        contexte: dict[str, Any] = {"dictionnaire": fichiers.charger(args.dictionnaire)}
+        if args.plan_echantillonnage:
+            contexte["quotas"] = chargeur.quotas_du_plan(args.plan_echantillonnage, plan_terrain.charger(args.plan_terrain))
+        rapport, interdits = chargeur.charger(args.rapport, jeux, note.texte(), chargeur.chiffres_de_base(note), contexte)
+        source_charte = args.charte or rapport.charte
+        charte = charger_charte(source_charte) if source_charte else charte_par_defaut()
+        ecrits, anomalies = produire(rapport, jeux, interdits, Path(args.sortie), args.nom, args.formats.split(","), charte)
+    except RapportBloque as e:
+        print(f"✘ rapport NON exporté : {len(e.anomalies)} anomalie(s) bloquante(s)")
+        for a in e.anomalies:
+            print(f"  {a.code} : {a.message}")
+        return 1
+    except (DecisionsInconnues, TableauInvalide, chargeur.RapportInvalide) as e:
+        print("✘", e)
+        return 1
+    for a in anomalies:
+        print(f"⚠ {a.code} : {a.message}")
+    for fmt, chemin in ecrits.items():
+        print(f"✔ {fmt} : {chemin}")
+    if not source_charte:
+        print(f"ℹ charte par défaut : {charte.nom} (déclarer « charte: » dans le rapport ou passer --charte)")
+    return 0
+
+
 def _suivi(args: argparse.Namespace) -> int:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -258,6 +291,12 @@ def _liens(args: argparse.Namespace) -> int:
     wb.save(sortie / "LIENS_PERSONNELS.xlsx")
     print(f"✔ {len(terrain.enqueteurs)} liens et QR codes → {sortie}")
     return 0
+
+
+# Arguments communs aux commandes qui reconstruisent la base d'analyse depuis le tableur (« --sortie » en dernier)
+_OPTIONS_ANALYSE: list[tuple[str, dict[str, Any]]] = [
+    ("tableur", {}), ("--onglet", {"default": "Form Responses 1"}), ("--dictionnaire", {"required": True}),
+    ("--plan-terrain", {"required": True}), ("--plan-analyse", {"required": True}), ("--decisions", {}), ("--sortie", {"required": True})]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -318,11 +357,18 @@ def main(argv: list[str] | None = None) -> int:
     ab.add_argument("--sortie", required=True)
     ab.set_defaults(f=_analyse_base)
     ar = an.add_parser("resultats", help="tableaux du plan d'analyse : classeur Excel et syntaxe SPSS équivalente")
-    for nom, options in (("tableur", {}), ("--onglet", {"default": "Form Responses 1"}), ("--dictionnaire", {"required": True}),
-                         ("--plan-terrain", {"required": True}), ("--plan-analyse", {"required": True}), ("--decisions", {}),
-                         ("--sortie", {"required": True})):
+    for nom, options in _OPTIONS_ANALYSE:
         ar.add_argument(nom, **options)
     ar.set_defaults(f=_analyse_resultats)
+    rp = sous.add_parser("rapport").add_subparsers(dest="action", required=True)
+    rpp = rp.add_parser("produire", help="rapport d'étude : contrôles bloquants puis Word, présentation de restitution, PDF")
+    for nom, options in [*_OPTIONS_ANALYSE[:-1],
+                         ("--rapport", {"required": True, "help": "déclaration YAML du rapport (projets/<étude>/rapport.yaml)"}),
+                         ("--plan-echantillonnage", {"help": "plan d'échantillonnage (quotas cités par « @quotas »)"}),
+                         ("--charte", {"help": "charte YAML (logo, couleurs, police)"}), ("--formats", {"default": "docx,pptx,pdf"}),
+                         ("--nom", {"default": "RAPPORT"}), ("--sortie", {"required": True})]:
+        rpp.add_argument(nom, **options)
+    rpp.set_defaults(f=_rapport_produire)
     su = sous.add_parser("suivi").add_subparsers(dest="action", required=True)
     sp = su.add_parser("produire", help="tableau de bord, rapport journalier, état des enquêteurs, effet enquêteur, rappels")
     sp.add_argument("tableur")

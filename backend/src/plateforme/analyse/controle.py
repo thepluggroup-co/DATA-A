@@ -7,7 +7,9 @@ vérifier dans le fichier livré pourquoi une fiche est retenue ou écartée :
   est rangée dans ce dernier jour (rattrapage), une fiche datée avant le premier jour reste manquante ;
 - NB_NR / TX_REMPL : questions sans réponse et taux de remplissage (variables_remplissage du dictionnaire) ;
 - DOUBLON_SUSP : 0 aucun, 1 ressemblance forte (à vérifier), 2 copie probable (écartée de la base) ;
-- FILTRE_QUAL : 1 si la fiche est retenue par base_analyse (décisions du superviseur comprises), sinon 0.
+- FILTRE_QUAL : 1 si la fiche est retenue par base_analyse (décisions du superviseur comprises), sinon 0 ;
+- NUMENQUE : enquêteur en code numérique (rang dans le plan de terrain), libellé = identifiant (ENQ1…), pour les
+  tableaux par enquêteur (CODEENQU est un texte).
 """
 
 from __future__ import annotations
@@ -43,8 +45,8 @@ def jour_terrain(jour: str, calendrier: list[date]) -> int | None:
 
 
 def variables_controle(dico: Dictionnaire, fiches: list[FicheCodee], calendrier: list[date],
-                       params: ParametresBase | None = None, decisions: dict[str, DecisionQC] | None = None
-                       ) -> tuple[dict[str, dict[str, Any]], dict[str, Variable]]:
+                       params: ParametresBase | None = None, decisions: dict[str, DecisionQC] | None = None,
+                       enqueteurs: list[str] | None = None) -> tuple[dict[str, dict[str, Any]], dict[str, Variable]]:
     """id de réponse -> {variable: valeur} pour toutes les fiches valides ; `fiches` dans l'ordre d'arrivée."""
     params = params or ParametresBase()
     retenues = {f.id_reponse for f in base_analyse(dico, fiches, params, decisions)[0]}
@@ -57,8 +59,15 @@ def variables_controle(dico: Dictionnaire, fiches: list[FicheCodee], calendrier:
         out[f.id_reponse] = {"ID_CASE": rang, "JOURTERR": jour_terrain(str(f.valeurs.get("DATEENQU") or ""), calendrier),
                              "NB_NR": round(n_questions * (1 - tx / 100)), "TX_REMPL": tx, "DOUBLON_SUSP": doublons[f.id_reponse],
                              "FILTRE_QUAL": int(f.id_reponse in retenues)}
+        if enqueteurs is not None:
+            code = str(f.valeurs.get("CODEENQU") or "")
+            out[f.id_reponse]["NUMENQUE"] = enqueteurs.index(code) + 1 if code in enqueteurs else None
     variables = dict(VARIABLES)
     variables["NB_NR"] = Variable("NB_NR", f"[C] Nombre de questions sans réponse (sur {n_questions})", {}, set(), "scale")
     variables["JOURTERR"] = Variable("JOURTERR", VARIABLES["JOURTERR"].label,
-                                     {float(k): f"J{k} ({j.isoformat()})" for k, j in enumerate(calendrier, start=1)}, set(), "ordinal")
+                                     {float(k): f"J{k} ({j:%d/%m}{' et rattrapage' if k == len(calendrier) else ''})"
+                                      for k, j in enumerate(calendrier, start=1)}, set(), "ordinal")
+    if enqueteurs is not None:
+        variables["NUMENQUE"] = Variable("NUMENQUE", "[C] Enquêteur", {float(k): e for k, e in enumerate(enqueteurs, start=1)}, set(),
+                                         "nominal")
     return out, variables

@@ -85,7 +85,12 @@ def test_variables_brutes_identiques(jeux: dict[str, Any]) -> None:
 def test_derivees_identiques(jeux: dict[str, Any], texte: str) -> None:
     pa = jeux["plan"]
     assert len(pa.derivations) >= 62
-    ecarts = {d.nom: len(e) for d in pa.derivations if (e := _ecarts(jeux[texte], jeux["livre"], d.nom))}
+    # Variables de travail de N08_A (indicateurs et poids du rapport) : supprimées en fin de syntaxe (N08:328), donc
+    # absentes du .sav livré ; elles sont vérifiées par test_synthese_s1_et_tableau_2bis.
+    # et variables créées pour le rapport régénéré (source « rapport V14 ») : absentes elles aussi du .sav livré.
+    travail = {d.nom for d in pa.derivations if d.source.startswith(("N08:", "rapport V14"))}
+    assert travail == {d.nom for d in pa.derivations if d.nom not in jeux["livre"].columns}
+    ecarts = {d.nom: len(e) for d in pa.derivations if d.nom not in travail and (e := _ecarts(jeux[texte], jeux["livre"], d.nom))}
     assert ecarts == {}
 
 
@@ -174,3 +179,26 @@ def test_tableaux_du_plan_sur_la_base_de_la_plateforme(jeux: dict[str, Any]) -> 
     valeur = res["Parts de marché en valeur (pondération par la dépense annuelle)"]
     assert valeur.base == 286 and round(valeur.pct(1), 1) == 22.8                           # type: ignore[attr-defined]  R427:222-226
     assert round(res["Facteurs d'achat en ligne (régression logistique)"].r2_nagelkerke, 2) == 0.23   # type: ignore[attr-defined]
+
+
+@reelles
+def test_synthese_s1_et_tableau_2bis(jeux: dict[str, Any]) -> None:
+    """Tableau S1 (N08_A:80-84) et colonne « profils égaux » du tableau 2 bis (N08_A:106-116), sur la base de la
+    plateforme, avec les variables R_*, P_* et W_* déclarées dans le plan d'analyse."""
+    from plateforme.analyse.procedures import indicateurs
+
+    p = ["P_DECU", "P_CONTREF", "P_QUAL", "P_REFUS10", "P_MOYGAM", "P_SCHNEI", "P_YAKI", "P_GARREM", "P_GROSSI", "P_ONLINE"]
+    s1 = indicateurs(jeux["complet"], p)
+    assert [(round(m, 1), int(n)) for _, _, m, n in s1.lignes] == [(80.0, 426), (80.5, 390), (66.0, 427), (80.8, 333), (51.0, 420),
+                                                                   (31.5, 355), (18.6, 355), (62.1, 367), (34.4, 427), (21.5, 377)]
+    profils = indicateurs(jeux["complet"], p, poids="W_PROF")
+    assert [round(m, 1) for _, _, m, _ in profils.lignes] == [78.4, 80.9, 69.7, 78.6, 47.3, 34.3, 14.4, 62.8, 34.3, 21.4]
+    # Colonnes « maillons égaux » et « villes égales » : absentes de la syntaxe, lues dans le rapport livré (V14, p. 13)
+    maillons = indicateurs(jeux["complet"], p, poids="W_MAIL")
+    assert [round(m, 1) for _, _, m, _ in maillons.lignes] == [79.0, 81.4, 68.7, 80.1, 49.0, 33.7, 15.9, 62.3, 35.8, 21.2]
+    villes = indicateurs(jeux["complet"], p, poids="W_VILL")
+    assert [round(m, 1) for _, _, m, _ in villes.lignes] == [80.0, 79.5, 64.6, 81.8, 50.6, 30.0, 16.6, 62.6, 33.0, 19.7]
+    # Colonne « Repère IC 95 % » du tableau S1 livré (V14, p. 5), arrondie à l'entier
+    ic = indicateurs(jeux["complet"], p, ic95=True).ic95
+    assert [(round(ic[v][0]), round(ic[v][1])) for v in p] == [(76, 84), (77, 84), (62, 71), (77, 85), (46, 56), (27, 36), (15, 23),
+                                                               (57, 67), (30, 39), (17, 26)]

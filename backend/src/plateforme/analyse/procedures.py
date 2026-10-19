@@ -61,9 +61,8 @@ def frequences(jd: JeuDonnees, variable: str, poids: str | None = None) -> Frequ
     lignes = []
     for code, eff in w[ok].groupby(s[ok]).sum().sort_index().items():
         p = eff / total if total else 0
-        demi = 1.96 * math.sqrt(p * (1 - p) / n) if n else 0
         c = float(code)  # type: ignore[arg-type]
-        lignes.append(LigneFrequence(c, jd.libelle(variable, c), float(eff), 100 * p, (100 * (p - demi), 100 * (p + demi))))
+        lignes.append(LigneFrequence(c, jd.libelle(variable, c), float(eff), 100 * p, ic95_normal(p, n)))
     nom_poids = poids if poids is not None else jd.poids
     res = Frequences("FREQUENCIES", n, nom_poids,
                      (f"WEIGHT BY {nom_poids}.\n" if nom_poids else "") + f"FREQUENCIES VARIABLES={variable}.",
@@ -236,9 +235,18 @@ def spearman(jd: JeuDonnees, x: str, y: str) -> TestStatistique:
 class Correspondances(Resultat):
     inertie_totale: float = math.nan
     part_axes: list[float] = field(default_factory=list)                 # % d'inertie par axe
+    ligne: str = ""
+    colonne: str = ""
+    points_lignes: dict[float, tuple[float, ...]] = field(default_factory=dict)     # code -> coordonnées (normalisation symétrique)
+    points_colonnes: dict[float, tuple[float, ...]] = field(default_factory=dict)
 
 
-def correspondances(jd: JeuDonnees, ligne: str, colonne: str, dimensions: int = 2) -> Correspondances:
+def correspondances(jd: JeuDonnees, ligne: str, colonne: str, dimensions: int = 2,
+                    inverser_axes: list[int] | None = None) -> Correspondances:
+    """Analyse des correspondances (prince). Coordonnées en normalisation SYMÉTRIQUE, comme /NORMALIZATION=SYMMETRICAL
+    de SPSS : coordonnées principales divisées par la racine de la valeur singulière de l'axe. Le signe d'un axe est
+    arbitraire ; `inverser_axes` (1 = premier axe) oriente la carte comme une sortie de référence."""
+    import numpy as np
     import pandas as pd
     import prince
 
@@ -248,10 +256,16 @@ def correspondances(jd: JeuDonnees, ligne: str, colonne: str, dimensions: int = 
     ca = prince.CA(n_components=min(dimensions, min(tab.shape) - 1)).fit(tab)
     inertie = float(ca.total_inertia_)
     parts = [100 * float(v) / inertie for v in ca.eigenvalues_]
+    racine_sv = np.sqrt(np.sqrt(np.asarray(ca.eigenvalues_, dtype=float)))
+    signes = np.array([-1.0 if k + 1 in (inverser_axes or []) else 1.0 for k in range(len(racine_sv))])
+    lignes_xy = ca.row_coordinates(tab).to_numpy() / racine_sv * signes
+    colonnes_xy = ca.column_coordinates(tab).to_numpy() / racine_sv * signes
     return Correspondances("CORRESPONDENCE", int(ok.sum()), None,
                            f"CORRESPONDENCE TABLE={ligne}{_plage(jd, ligne)} BY {colonne}{_plage(jd, colonne)} /DIMENSIONS={dimensions} /MEASURE=CHISQ "
                            "/STANDARDIZE=RCMEAN /NORMALIZATION=SYMMETRICAL /PRINT=TABLE RPOINTS CPOINTS.",
-                           inertie_totale=inertie, part_axes=parts)
+                           inertie_totale=inertie, part_axes=parts, ligne=ligne, colonne=colonne,
+                           points_lignes={float(c): tuple(float(x) for x in xy) for c, xy in zip(tab.index, lignes_xy, strict=True)},
+                           points_colonnes={float(c): tuple(float(x) for x in xy) for c, xy in zip(tab.columns, colonnes_xy, strict=True)})
 
 
 # ------------------------------------------------------------------------------------------------ régression logistique
@@ -260,6 +274,26 @@ class Logistique(Resultat):
     coefficients: dict[str, tuple[float, float, float, float]] = field(default_factory=dict)   # terme -> (Exp(B), IC bas, IC haut, p)
     r2_nagelkerke: float = math.nan
     r2_cox_snell: float = math.nan
+    hosmer_lemeshow: tuple[float, int, float] = (math.nan, 0, math.nan)            # (khi-deux, ddl, p)
+
+
+def hosmer_lemeshow(y: Any, prob: Any, groupes: int = 10) -> tuple[float, int, float]:
+    """Test d'ajustement de Hosmer-Lemeshow : groupes formés par les déciles des probabilités prédites (bornes = valeurs
+    observées), les fiches de même probabilité restant dans le même groupe ; khi-deux à g - 2 ddl sur le tableau 2 × g."""
+    import numpy as np
+    from scipy.stats import chi2
+
+    y, prob = np.asarray(y, dtype=float), np.round(np.asarray(prob, dtype=float), 10)
+    bornes = [np.quantile(prob, k / groupes, method="higher") for k in range(1, groupes)]
+    g = np.searchsorted(bornes, prob, side="right")
+    stat = 0.0
+    codes = np.unique(g)
+    for k in codes:
+        dans = g == k
+        n, o1, e1 = int(dans.sum()), float(y[dans].sum()), float(prob[dans].sum())
+        stat += (o1 - e1) ** 2 / e1 + (o1 - e1) ** 2 / (n - e1)
+    ddl = len(codes) - 2
+    return stat, ddl, float(chi2.sf(stat, ddl))
 
 
 def logistique(jd: JeuDonnees, dependante: str, explicatives: list[str], categorielles: list[str]) -> Logistique:
@@ -287,7 +321,8 @@ def logistique(jd: JeuDonnees, dependante: str, explicatives: list[str], categor
                      f"LOGISTIC REGRESSION VARIABLES {dependante} /METHOD=ENTER {' '.join(explicatives)} "
                      + (f"/CATEGORICAL={' '.join(categorielles)} " if categorielles else "")
                      + " ".join(f"/CONTRAST ({c})=INDICATOR(1)" for c in categorielles) + " /PRINT=GOODFIT CI(95).",
-                     r2_nagelkerke=nagel, r2_cox_snell=cox)
+                     r2_nagelkerke=nagel, r2_cox_snell=cox,
+                     hosmer_lemeshow=hosmer_lemeshow(df[dependante].to_numpy(dtype=float), modele.predict(x).to_numpy()))
     for terme in x.columns:
         if terme == "const":
             continue
@@ -379,4 +414,293 @@ def t_student(jd: JeuDonnees, variable: str, groupe: str, codes: tuple[float, fl
                           statistique=float(r.statistic), p=float(r.pvalue), ddl=len(a) + len(b) - 2,
                           detail={"moyenne_1": float(a.mean()), "moyenne_2": float(b.mean())})
     res.avertissements.append("variances supposées égales ; la correction de Welch n'est pas encore validée par un test de référence")
+    return res
+
+
+# ------------------------------------------------------------------------------------------------ tableaux composés
+# Assemblages de procédures déjà validées (aucun calcul nouveau) : ce sont les tableaux de synthèse des rapports.
+@dataclass
+class Indicateurs(Resultat):
+    """Une ligne par indicateur : (variable, libellé, moyenne, N). Pour des indicateurs 0/100, la moyenne est un %."""
+    lignes: list[tuple[str, str, float, float]] = field(default_factory=list)
+    ic95: dict[str, tuple[float, float]] = field(default_factory=dict)        # variable -> repère IC 95 % (en %)
+
+
+def indicateurs(jd: JeuDonnees, variables: list[str], poids: str | None = None, ic95: bool = False) -> Indicateurs:
+    """Chiffres clés (MEANS TABLES=v1 v2 … /CELLS=MEAN COUNT) : chaque ligne garde SA base. `ic95` : repère d'intervalle
+    de confiance des indicateurs en % (0/100), non pondérés seulement (N08_A:85)."""
+    import pandas as pd
+
+    nom_poids = poids if poids is not None else jd.poids
+    if ic95 and nom_poids:
+        raise ValueError("repère IC 95 % non défini sur des indicateurs pondérés")
+    lignes = []
+    res = Indicateurs("MEANS", 0, nom_poids,
+                      (f"WEIGHT BY {nom_poids}.\n" if nom_poids else "") + f"MEANS TABLES={' '.join(variables)} /CELLS=MEAN COUNT.")
+    for v in variables:
+        m = moyennes(jd, v, poids=poids)
+        lignes.append((v, jd.variables[v].label if v in jd.variables else v, m.moyenne, m.effectif))
+        if ic95:
+            valeurs = set(jd.valides(v).dropna().unique())
+            if not valeurs <= {0.0, 100.0}:
+                raise ValueError(f"{v} : repère IC 95 % réservé aux indicateurs 0/100")
+            res.ic95[v] = ic95_normal(m.moyenne / 100, int(m.effectif))
+    res.lignes = lignes
+    res.base = int(pd.DataFrame({v: jd.valides(v).notna() for v in variables}).any(axis=1).sum())
+    if ic95:
+        res.avertissements.append("repère IC 95 % sous hypothèse d'échantillonnage aléatoire, non représentatif d'un plan par quotas")
+    return res
+
+
+def _dixieme(x: float) -> float:
+    """Arrondi au dixième, demi vers le haut (affichage du rapport)."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    return float(Decimal(repr(x)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+
+def ic95_normal(p: float, n: int) -> tuple[float, float]:
+    """Repère d'intervalle de confiance à 95 % d'une proportion, approximation normale (statsmodels), en %."""
+    from statsmodels.stats.proportion import proportion_confint
+
+    if n <= 0:
+        return (math.nan, math.nan)
+    bas, haut = proportion_confint(p * n, n, alpha=0.05, method="normal")
+    return (100 * float(bas), 100 * float(haut))
+
+
+@dataclass
+class SyntheseKhi2(Resultat):
+    """Une ligne par croisement : (variable, croisée par, n, khi-deux, ddl, p, V de Cramér, part des théoriques < 5).
+    `ecarts` : pour le PREMIER critère de `par`, la case au plus fort résidu ajusté (modalité, colonne, % colonne,
+    résidu), seulement si l'écart est significatif (p < 0,05). `kruskal` : p de Kruskal-Wallis demandés."""
+    lignes: list[tuple[str, str, int, float, int, float, float, float]] = field(default_factory=list)
+    par: list[str] = field(default_factory=list)
+    ecarts: dict[str, tuple[str, str, float, float]] = field(default_factory=dict)
+    kruskal: dict[tuple[str, str], float] = field(default_factory=dict)
+
+
+def synthese_khi2(jd: JeuDonnees, variables: list[str], par: list[str],
+                  kruskal: dict[str, list[str]] | list[str] | None = None) -> SyntheseKhi2:
+    """Tableau des écarts entre groupes (CROSSTABS /TABLES=v… BY p… /STATISTICS=CHISQ PHI), une ligne par croisement ;
+    `kruskal` : {variable ordonnée: [critères]} (ou liste de variables, pour tous les critères) pour lesquels le test de
+    Kruskal-Wallis complète le khi-deux (NPAR TESTS /K-W)."""
+    kw = {v: list(par) for v in kruskal} if isinstance(kruskal, list) else dict(kruskal or {})
+    res = SyntheseKhi2("CROSSTABS", len(jd.table), jd.poids,
+                       f"CROSSTABS /TABLES={' '.join(variables)} BY {' '.join(par)} /FORMAT=AVALUE TABLES "
+                       "/STATISTICS=CHISQ PHI /CELLS=COUNT COLUMN ASRESID.", par=list(par))
+    for v in variables:
+        for k, g in enumerate(par):
+            t = tri_croise(jd, v, g)
+            res.lignes.append((v, g, t.base, t.khi2, t.ddl, t.p, t.v_cramer, t.part_theoriques_faibles))
+            if t.part_theoriques_faibles > 0.20:
+                res.avertissements.append(f"{v} × {g} : {100 * t.part_theoriques_faibles:.0f} % des effectifs théoriques < 5")
+            if k == 0 and t.p < 0.05 and t.residus_ajustes:
+                i, j = max(((i, j) for i in range(len(t.codes_lignes)) for j in range(len(t.codes_colonnes))),
+                           key=lambda ij: abs(t.residus_ajustes[ij[0]][ij[1]]))
+                res.ecarts[v] = (jd.libelle(v, t.codes_lignes[i]), jd.libelle(g, t.codes_colonnes[j]), t.pct_colonne[i][j],
+                                 t.residus_ajustes[i][j])
+            if g in kw.get(v, []):
+                res.kruskal[(v, g)] = kruskal_wallis(jd, v, g).p
+    return res
+
+
+@dataclass
+class Recapitulatif(Resultat):
+    """Une ligne par variable : (variable, libellé, base, modalité principale, % de la modalité principale)."""
+    lignes: list[tuple[str, str, int, str, float]] = field(default_factory=list)
+    attendu: int | None = None                 # nombre de variables que le tableau doit couvrir (contrôle de complétude)
+
+
+def recapitulatif(jd: JeuDonnees, variables: list[str], attendu: int | None = None) -> Recapitulatif:
+    """Récapitulatif des variables (FREQUENCIES /ORDER=ANALYSIS) : base et modalité la plus citée de chacune."""
+    res = Recapitulatif("FREQUENCIES", len(jd.table), jd.poids,
+                        f"FREQUENCIES VARIABLES={' '.join(variables)} /ORDER=ANALYSIS.", attendu=attendu)
+    for v in variables:
+        f = frequences(jd, v)
+        tete = max(f.lignes, key=lambda li: li.effectif, default=None)
+        res.lignes.append((v, jd.variables[v].label if v in jd.variables else v, f.base,
+                           tete.libelle if tete else "", tete.pourcentage if tete else math.nan))
+    if attendu is not None and attendu != len(variables):
+        res.avertissements.append(f"incomplet : {len(variables)} variables sur {attendu} attendues")
+    return res
+
+
+@dataclass
+class Sensibilite(Resultat):
+    """Test de sensibilité à la composition de l'échantillon : chaque indicateur recalculé sous plusieurs pondérations.
+    Une ligne : (variable, libellé, base non pondérée, valeur non pondérée, {colonne: valeur pondérée}, écart maximal)."""
+    colonnes: list[str] = field(default_factory=list)
+    lignes: list[tuple[str, str, float, float, dict[str, float], float]] = field(default_factory=list)
+
+
+def sensibilite(jd: JeuDonnees, variables: list[str], ponderations: dict[str, str]) -> Sensibilite:
+    """Tableau 2 bis du rapport EDM : `ponderations` = {titre de colonne: variable de poids}. L'écart maximal est
+    l'étendue (maximum − minimum) entre la valeur non pondérée et les valeurs pondérées, calculée sur les valeurs
+    arrondies au dixième telles qu'elles sont affichées, comme dans le rapport livré (V14 p. 13 : 81,4 − 79,5 = 1,9 pt)."""
+    brut = indicateurs(jd, variables)
+    ponderes = {titre: indicateurs(jd, variables, poids=w) for titre, w in ponderations.items()}
+    res = Sensibilite("MEANS", brut.base, None,
+                      "\n".join([f"MEANS TABLES={' '.join(variables)} /CELLS=MEAN COUNT."]
+                                + [f"WEIGHT BY {w}.\nMEANS TABLES={' '.join(variables)} /CELLS=MEAN.\nWEIGHT OFF."
+                                   for w in ponderations.values()]),
+                      colonnes=list(ponderations))
+    for k, (v, lib, m, n) in enumerate(brut.lignes):
+        valeurs = {titre: r.lignes[k][2] for titre, r in ponderes.items()}
+        tout = [_dixieme(x) for x in (m, *valeurs.values())]       # sur les valeurs AFFICHÉES : le lecteur refait le calcul
+        res.lignes.append((v, lib, n, m, valeurs, round(max(tout) - min(tout), 1)))
+    return res
+
+
+@dataclass
+class QuotasRealises(Resultat):
+    """Fiches réalisées et quotas prévus, cible × ville (tableau 2 du rapport EDM)."""
+    cible: str = ""
+    ville: str = ""
+    codes_cibles: list[float] = field(default_factory=list)
+    codes_villes: list[float] = field(default_factory=list)
+    realise: list[list[int]] = field(default_factory=list)       # [cible][ville]
+    prevu: list[list[int]] = field(default_factory=list)
+
+
+def quotas_realises(jd: JeuDonnees, cible: str, ville: str, prevu: dict[Any, dict[Any, int]]) -> QuotasRealises:
+    """Comptage cible × ville (CROSSTABS, effectifs) rapproché des quotas du plan d'échantillonnage `prevu`
+    ({code cible: {code ville: quota}}). Les cibles et villes sont celles du plan, dans son ordre."""
+    c, v = jd.valides(cible), jd.valides(ville)
+    plan = {float(k): {float(kv): int(n) for kv, n in q.items()} for k, q in prevu.items()}
+    codes_c = list(plan)
+    codes_v = sorted({kv for q in plan.values() for kv in q})
+    res = QuotasRealises("CROSSTABS", int((c.notna() & v.notna()).sum()), jd.poids,
+                         f"CROSSTABS /TABLES={cible} BY {ville} /FORMAT=AVALUE TABLES /CELLS=COUNT TOTAL.",
+                         cible=cible, ville=ville, codes_cibles=codes_c, codes_villes=codes_v)
+    for kc in codes_c:
+        res.realise.append([int(((c == kc) & (v == kv)).sum()) for kv in codes_v])
+        res.prevu.append([plan[kc].get(kv, 0) for kv in codes_v])
+    hors = int((c.notna() & v.notna()).sum()) - sum(map(sum, res.realise))
+    if hors:
+        res.avertissements.append(f"{hors} fiches hors des cibles ou des villes du plan")
+    return res
+
+
+@dataclass
+class Remplissage(Resultat):
+    """Tableau de traitement des données (tableau 6 du rapport EDM) : pour chaque variable, part des réponses, des
+    « Sans avis / NSP » (code 98, seulement si le questionnaire propose cette case) et des non-réponses (code 99).
+    Une ligne : (groupe, variable, libellé, base, % réponses, % 98 ou None, % 99)."""
+    lignes: list[tuple[str, str, str, int, float, float | None, float]] = field(default_factory=list)
+    attendu: int | None = None
+
+
+def remplissage(jd: JeuDonnees, groupes: dict[str, list[str]], attendu: int | None = None,
+                bases: dict[str, str] | None = None) -> Remplissage:
+    """`groupes` : {titre de rubrique: [variables]} dans l'ordre du questionnaire ; `bases` : sous-population propre à
+    une variable (ex. le texte « Autre » rapporté aux fiches qui ont coché « Autre »), condition du plan d'analyse."""
+    import pandas as pd
+
+    from plateforme.analyse.derivees import _Evaluateur
+
+    res = Remplissage("FREQUENCIES", len(jd.table), jd.poids, "", attendu=attendu)
+    variables = [v for vs in groupes.values() for v in vs]
+    res.syntaxe_spss = f"FREQUENCIES VARIABLES={' '.join(variables)} /FORMAT=NOTABLE /STATISTICS=NONE /MISSING=INCLUDE."
+    for groupe, vs in groupes.items():
+        for v in vs:
+            brut = jd.table[v]
+            if bases and v in bases:
+                brut = brut[_Evaluateur._bool(_Evaluateur(jd)(bases[v])).to_numpy()]
+            n = len(brut)
+            vide = brut.isna() | (brut.astype(str).str.strip() == "")
+            codes = pd.to_numeric(brut, errors="coerce")
+            propose_98 = 98.0 in (jd.variables[v].valeurs if v in jd.variables else {})
+            if codes.notna().sum() == 0 and (~vide).any():          # variable texte : réponse = case remplie
+                nsp, nr = 0, int(vide.sum())
+            else:
+                nsp = int((codes == 98).sum()) if propose_98 else 0
+                nr = int((codes == 99).sum() + vide.sum())
+            lib = jd.variables[v].label if v in jd.variables and jd.variables[v].label else v
+            res.lignes.append((groupe, v, lib, n, _part(n - nr - nsp, n), _part(nsp, n) if propose_98 else None, _part(nr, n)))
+    if attendu is not None and attendu != len(variables):
+        res.avertissements.append(f"incomplet : {len(variables)} variables sur {attendu} attendues")
+    return res
+
+
+def _part(k: int, n: int) -> float:
+    return 100 * k / n if n else math.nan
+
+
+@dataclass
+class Batterie(Resultat):
+    """Plusieurs questions présentées ensemble (ex. prix attendus pour trois gammes) : une distribution par variable,
+    chacune sur SES réponses valides."""
+    variables: list[str] = field(default_factory=list)
+    frequences: dict[str, Frequences] = field(default_factory=dict)
+
+
+def batterie(jd: JeuDonnees, variables: list[str]) -> Batterie:
+    """FREQUENCIES VARIABLES=v1 v2 … : chaque variable garde sa base (réponses valides)."""
+    res = Batterie("FREQUENCIES", 0, jd.poids, f"FREQUENCIES VARIABLES={' '.join(variables)}.", variables=list(variables))
+    for v in variables:
+        res.frequences[v] = frequences(jd, v)
+    res.base = max((f.base for f in res.frequences.values()), default=0)
+    return res
+
+
+@dataclass
+class Repartitions(Resultat):
+    """Une même question répartie dans plusieurs sous-populations présentées côte à côte (ex. une ville, puis l'ensemble)."""
+    variable: str = ""
+    parts: dict[str, Frequences] = field(default_factory=dict)          # titre -> fréquences
+    conditions: dict[str, str] = field(default_factory=dict)            # titre -> condition (vide = ensemble)
+
+
+def repartitions(jd: JeuDonnees, variable: str, groupes: dict[str, str]) -> Repartitions:
+    """`groupes` : {titre: condition du plan d'analyse} ; condition vide = ensemble des fiches."""
+    from plateforme.analyse.derivees import _Evaluateur
+
+    res = Repartitions("FREQUENCIES", 0, jd.poids, "", variable=variable, conditions=dict(groupes))
+    syntaxes = []
+    for titre, condition in groupes.items():
+        sous = jd.filtrer(_Evaluateur._bool(_Evaluateur(jd)(condition)), condition) if condition else jd
+        res.parts[titre] = frequences(sous, variable)
+        syntaxes.append(f"* {titre}.")
+        syntaxes.append(f"FREQUENCIES VARIABLES={variable}.")
+    res.syntaxe_spss = "\n".join(syntaxes)
+    res.base = max((f.base for f in res.parts.values()), default=0)
+    return res
+
+
+@dataclass
+class PartsBootstrap(Resultat):
+    """Parts d'une variable pondérée (ex. part de la dépense estimée par marque), avec intervalle bootstrap à 95 %.
+    `parts` : titre -> (part, borne basse, borne haute), en %."""
+    variable: str = ""
+    poids_variable: str = ""
+    tirages: int = 1000
+    graine: int = 0
+    parts: dict[str, tuple[float, float, float]] = field(default_factory=dict)
+
+
+def parts_bootstrap(jd: JeuDonnees, variable: str, poids: str, groupes: dict[str, list[float]], tirages: int = 1000,
+                    graine: int = 2026) -> PartsBootstrap:
+    """Part pondérée de chaque groupe de modalités et intervalle bootstrap percentile à 95 % (scipy.stats.bootstrap,
+    rééchantillonnage des fiches avec leur poids, `tirages` tirages, graine fixe : résultat reproductible). Équivalent de
+    BOOTSTRAP /SAMPLING METHOD=SIMPLE … /CRITERIA CILEVEL=95 CITYPE=PERCENTILE de SPSS, dont les tirages sont aléatoires."""
+    import numpy as np
+    from scipy.stats import bootstrap
+
+    x, w = jd.valides(variable), jd.valides(poids)
+    ok = x.notna() & w.notna() & (w > 0)
+    xv, wv = x[ok].to_numpy(dtype=float), w[ok].to_numpy(dtype=float)
+    res = PartsBootstrap("FREQUENCIES (BOOTSTRAP)", int(ok.sum()), poids,
+                         f"TEMPORARY.\nSELECT IF NOT MISSING({poids}).\nWEIGHT BY {poids}.\n"
+                         f"BOOTSTRAP /SAMPLING METHOD=SIMPLE /VARIABLES INPUT={variable} /CRITERIA CILEVEL=95 CITYPE=PERCENTILE "
+                         f"NSAMPLES={tirages}.\nFREQUENCIES VARIABLES={variable}.",
+                         variable=variable, poids_variable=poids, tirages=tirages, graine=graine)
+    for titre, codes in groupes.items():
+        def part(xs: Any, ws: Any, codes: list[float] = codes) -> float:
+            return float(100 * np.sum(ws * np.isin(xs, codes)) / np.sum(ws))
+        ic = bootstrap((xv, wv), part, paired=True, vectorized=False, n_resamples=tirages, method="percentile",
+                       random_state=np.random.default_rng(graine)).confidence_interval
+        res.parts[titre] = (part(xv, wv), float(ic.low), float(ic.high))
+    res.avertissements.append(f"intervalles bootstrap ({tirages} tirages, graine {graine}) : repère indicatif sous hypothèse "
+                              "d'échantillonnage aléatoire")
     return res

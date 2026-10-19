@@ -1,0 +1,11 @@
+# Charte M2B Conseils (client de l'étude EDM), relevée dans le XML du rapport livré V14
+# (reference/prive/documents/RAPPORT_EDM_EQUIPEMENTS_ELECTRIQUES_V14.docx) — D-039.
+# Logo : DATA'A (produit qui génère le rapport, D-042) ; le logo M2B n'a pas été fourni.
+nom: M2B Conseils (rapport EDM V14)
+police: Candara                 # styles du document V14
+logo: ../../reference/charte/data_a/logo_data_a.png
+couleur_titres: "223962"        # bleu marine : titres et en-têtes de tableaux (115 cellules)
+couleur_texte: "1F2A44"         # texte courant (1 706 occurrences)
+fond_entete: "223962"
+fond_alterne: "EEF2F8"          # lignes alternées (94 cellules ; F5F7FB : 100)
+palette: ["223962", "00B050", "032F66", "0B7A3B", "DCE3EF", "404040"]

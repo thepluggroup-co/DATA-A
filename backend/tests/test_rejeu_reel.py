@@ -133,3 +133,22 @@ def test_ligne_de_commande_analyse_resultats(tmp_path: Path) -> None:
     sps = (tmp_path / "RESULTATS.sps").read_text(encoding="utf-8")
     assert "COMPUTE CTRL_BASE = (CTRL_N = 427)." in sps and "GET FILE" not in sps
     assert len(list(load_workbook(tmp_path / "RESULTATS.xlsx")["Syntaxe SPSS"].iter_rows())) == 21
+
+
+@pytest.mark.skipif(not (DECISIONS.exists() and SAV_446.exists()), reason="données de l'étude absentes (reference/prive/, hors Git)")
+def test_ligne_de_commande_rapport_produire(tmp_path: Path) -> None:
+    """Extrait du rapport EDM (tableau S1, graphique 11) : du tableur brut au Word et à la présentation, contrôles passés."""
+    from conftest import PROJET_EDM
+    from docx import Document
+
+    from plateforme.cli import main
+    code = main(["rapport", "produire", str(MASQUE_0910), "--dictionnaire", str(PROJET_EDM / "dictionnaire.yaml"),
+                 "--plan-terrain", str(PROJET_EDM / "plan_terrain.yaml"), "--plan-analyse", str(PROJET_EDM / "plan_analyse.yaml"),
+                 "--decisions", str(DECISIONS), "--rapport", str(Path(__file__).parent / "donnees" / "rapport_edm_extrait.yaml"),
+                 "--formats", "docx,pptx", "--nom", "RAPPORT_EDM", "--sortie", str(tmp_path)])
+    assert code == 0
+    textes = [par.text.replace("\u00a0", " ") for par in Document(str(tmp_path / "RAPPORT_EDM.docx")).paragraphs]
+    assert any(x.endswith("427 fiches retenues pour l'analyse.") for x in textes[:4]), "note de base générale en tête"
+    assert "80,0 % des acheteurs ont déjà été déçus par un achat, et 31,5 % achètent surtout du Schneider (tableau S1)." in textes
+    assert "Les prises sont achetées par 84,7 % des 424 acheteurs (graphique 11)." in textes          # V4:345
+    assert (tmp_path / "RAPPORT_EDM_RESTITUTION.pptx").stat().st_size > 0

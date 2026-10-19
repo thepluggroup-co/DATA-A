@@ -1,0 +1,13 @@
+# Charte DATA'A (produit, D-038) — charte par défaut des rapports quand l'étude n'en déclare pas (D-042).
+# Couleurs MESURÉES dans logo_data_a.png (moyenne des pixels de chaque zone, 19/10/2026) :
+#   021C43 texte « DATA'A » ; 1658C3 bleu du D ; 15ABDC barres ; 15EAE0 apostrophe turquoise.
+# Teintes CALCULÉES (part p de la couleur sur blanc : 255 - p × (255 - c)) : fond_alterne = 10 % de 15ABDC ;
+# palette, 5e et 6e couleurs = 50 % de 021C43 (808EA1) et 50 % de 1658C3 (8AACE1).
+nom: DATA'A
+police: Calibri
+logo: logo_data_a.png
+couleur_titres: "021C43"
+couleur_texte: "021C43"
+fond_entete: "021C43"
+fond_alterne: "E8F7FC"
+palette: ["021C43", "1658C3", "15ABDC", "15EAE0", "808EA1", "8AACE1"]

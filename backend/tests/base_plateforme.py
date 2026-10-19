@@ -47,7 +47,7 @@ def construire(dico: Dictionnaire, terrain: PlanTerrain) -> BasesPlateforme:
     r = charger_reel(dico, terrain)
     retenues, _ = base_analyse(dico, r.fiches, ParametresBase(), r.decisions)
     pa = plan_analyse.charger(PLAN)
-    controles = variables_controle(dico, r.fiches, terrain.jours, decisions=r.decisions)
+    controles = variables_controle(dico, r.fiches, terrain.jours, decisions=r.decisions, enqueteurs=[e.id for e in terrain.enqueteurs])
     colonnes = colonnes_masque(dico, terrain.villes_masque())
     brut = plan_analyse.jeu_depuis_fiches(colonnes, retenues, pa, deriver=False, controles=controles)
     tronque = brut.avec_variable("MAACAUTR", brut.table["MAACAUTR"].map(octets8), brut.variables["MAACAUTR"])

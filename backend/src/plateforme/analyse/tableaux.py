@@ -23,11 +23,14 @@ PROCEDURES: dict[str, Callable[..., p.Resultat]] = {
     "frequences": p.frequences, "moyennes": p.moyennes, "tri_croise": p.tri_croise, "reponses_multiples": p.reponses_multiples,
     "kruskal_wallis": p.kruskal_wallis, "mann_whitney": p.mann_whitney, "spearman": p.spearman, "correspondances": p.correspondances,
     "logistique": p.logistique, "regression_lineaire": p.regression_lineaire, "anova_un_facteur": p.anova_un_facteur,
-    "t_student": p.t_student,
+    "t_student": p.t_student, "indicateurs": p.indicateurs, "synthese_khi2": p.synthese_khi2, "recapitulatif": p.recapitulatif,
+    "sensibilite": p.sensibilite, "quotas_realises": p.quotas_realises,
+    "remplissage": p.remplissage, "batterie": p.batterie,
+    "repartitions": p.repartitions, "parts_bootstrap": p.parts_bootstrap,
 }
 # arguments qui désignent des variables du jeu de données (vérifiés avant tout calcul)
 ARGUMENTS_VARIABLES = {"variable", "par", "poids", "ligne", "colonne", "groupe", "x", "y", "dependante", "variables", "explicatives",
-                       "categorielles"}
+                       "categorielles", "ponderations"}
 
 
 class TableauInvalide(ValueError):
@@ -69,6 +72,8 @@ def filtre_spss(expression: str) -> str:
             return n.id
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "valeur" and len(n.args) == 1:
             return f"VALUE({t(n.args[0])})"
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "manquant" and len(n.args) == 1:
+            return f"MISSING({t(n.args[0])})"
         if isinstance(n, ast.BoolOp):
             return "(" + (" AND " if isinstance(n.op, ast.And) else " OR ").join(t(v) for v in n.values) + ")"
         if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.Not):
@@ -99,7 +104,8 @@ def _verifier(tab: Tableau, jd: JeuDonnees) -> Callable[..., p.Resultat]:
         raise TableauInvalide(f"« {tab.titre} » : arguments inconnus {sorted(inconnus)}, manquants {sorted(manquants)}")
     for nom, valeur in tab.arguments.items():
         if nom in ARGUMENTS_VARIABLES and valeur is not None:
-            absentes = [v for v in (valeur if isinstance(valeur, list) else [valeur]) if v not in jd.table.columns]
+            noms = list(valeur.values()) if isinstance(valeur, dict) else (valeur if isinstance(valeur, list) else [valeur])
+            absentes = [v for v in noms if v not in jd.table.columns]
             if absentes:
                 raise TableauInvalide(f"« {tab.titre} » : variables absentes du jeu d'analyse : {', '.join(map(str, absentes))}")
     return f

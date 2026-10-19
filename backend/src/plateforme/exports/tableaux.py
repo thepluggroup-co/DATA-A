@@ -18,7 +18,7 @@ class NomDeFichierInvalide(ValueError):
     """Extension absente, multiple ou inattendue (cas réel : « EXPORT_SPSS.csv.csv »)."""
 
 
-EXTENSIONS_CONNUES = {".csv", ".sav", ".zsav", ".sps", ".xlsx", ".xls", ".txt", ".docx", ".pdf"}
+EXTENSIONS_CONNUES = {".csv", ".sav", ".zsav", ".sps", ".xlsx", ".xls", ".txt", ".docx", ".pdf", ".pptx"}
 
 
 def verifier_nom(chemin: Path, extension: str) -> None:

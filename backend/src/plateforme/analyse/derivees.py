@@ -12,6 +12,7 @@ Fonctions de texte : commence(V, "TXT"), contient(V, "TXT"), vide(V) — sur le 
 de tête (UPCASE(LTRIM()) de SPSS). Dans ces trois fonctions, V peut être remplacé par premiere_citation(V) : le texte
 avant la première virgule ou le premier point-virgule (règle « première marque citée » d'une liste libre), ou par
 premier_mot(V) : le premier mot de cette première citation (listes séparées par de simples espaces).
+Effectifs (AGGREGATE de SPSS) : effectif_groupe(V) = nombre de fiches ayant la même valeur de V, nb_fiches() = total.
 Les expressions sont analysées par liste blanche (aucun eval).
 """
 
@@ -136,6 +137,12 @@ class _Evaluateur:
                 return self.texte(noms[0]).str.strip() == ""
             if f == "manquant" and len(noms) == 1:
                 return self.jd.valides(noms[0]).isna()
+            if f == "effectif_groupe" and len(noms) == 1:
+                # AGGREGATE /BREAK=V /N=N de SPSS : nombre de fiches ayant la même valeur (brute) de V que la fiche
+                brut = self.jd.table[noms[0]]
+                return brut.groupby(brut, dropna=False).transform("size").astype(float)
+            if f == "nb_fiches" and not noms:
+                return pd.Series(float(len(self.jd.table)), index=self.jd.table.index)
             raise RegleInvalide(f"fonction inconnue : {f}")
         raise RegleInvalide(f"élément non autorisé : {type(n).__name__}")
 

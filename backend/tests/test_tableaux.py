@@ -36,6 +36,7 @@ def test_manquant_exclu_du_filtre(jd: JeuDonnees) -> None:
     ("PROFIL in (1, 2) and not VILLE == 3", "(ANY(PROFIL, 1, 2) AND NOT (VILLE = 3))"),
     ("VILLE != 1 or valeur(PROFIL) >= 99", "(VILLE ~= 1 OR VALUE(PROFIL) >= 99)"),
     ("PROFIL not in (1,)", "NOT ANY(PROFIL, 1)"),
+    ("not manquant(PROFIL)", "NOT (MISSING(PROFIL))"),
 ])
 def test_filtre_spss(expression: str, spss: str) -> None:
     assert filtre_spss(expression) == spss

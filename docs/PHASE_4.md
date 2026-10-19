@@ -1,6 +1,6 @@
 # Phase 4 — Moteur d'analyse (M14)
 
-**État : terminée, en attente de validation du fondateur.** 313 tests au vert (dont 170 pour la phase 4, ajouts du 18/10 compris), ruff et mypy strict sans erreur.
+**État : VALIDÉE (D-035, 18/10/2026).** 313 tests au vert (dont 170 pour la phase 4, ajouts du 18/10 compris), ruff et mypy strict sans erreur.
 
 ## Critère d'acceptation
 Test d'or : sorties des syntaxes `EDM_EE_*` reproduites à l'arrondi près ; écarts expliqués.

@@ -1,0 +1,19 @@
+# Extrait du rapport EDM pour le test de bout en bout de `plateforme rapport produire`.
+# Seuls des éléments dont le numéro est CERTAIN dans N08_A_RAPPORT_427.sps (TITLE) : tableau S1 (N08:80-84) et
+# graphique 11 (N08:151-158). La structure complète viendra du rapport Word livré au client (D-036).
+titre: "Distribution du matériel et des équipements électriques au Cameroun"
+etude: EDM_EQUIPEMENTS_ELECTRIQUES_CAMEROUN
+termes_interdits: [boissons, peinture, B-SOLUTIONS, SOLINA]
+elements:
+  - {section: "Synthèse exécutive", niveau: 1}
+  - {tableau: "S1", id: s1, titre: "Chiffres clés (en %)", source: "N08_A_RAPPORT_427.sps:80-84", procedure: indicateurs,
+     arguments: {variables: [P_DECU, P_CONTREF, P_QUAL, P_REFUS10, P_MOYGAM, P_SCHNEI, P_YAKI, P_GARREM, P_GROSSI, P_ONLINE]}}
+  - {texte: "[[s1.ligne(P_DECU)]] % des acheteurs ont déjà été déçus par un achat, et [[s1.ligne(P_SCHNEI)]] % achètent surtout du Schneider (tableau S1)."}
+  - {section: "Demande", niveau: 1}
+  - {figure: "11", id: produits, titre: "Produits achetés (Q9)", source: "N08_A_RAPPORT_427.sps:151-158", procedure: reponses_multiples,
+     arguments: {variables: [PRACCABL, PRACAPPA, PRACPRIS, PRACLUMI, PRACSOLA, PRACGROU]}}
+  - {texte: "Les prises sont achetées par [[produits.pct(PRACPRIS)]] % des [[produits.base]] acheteurs (graphique 11)."}
+  - {section: "Conclusions", niveau: 1, role: conclusions}
+  - {texte: "Les acheteurs ont souvent été déçus, ce qui ouvre la place à une offre de qualité garantie."}
+  - {section: "Recommandations", niveau: 1, role: recommandations}
+  - {texte: "Nous recommandons de mettre la garantie avec remplacement au cœur de l'offre."}
