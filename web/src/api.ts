@@ -18,7 +18,8 @@ export async function api<T>(chemin: string, options: { methode?: string; corps?
   const entetes: Record<string, string> = {};
   if (options.corps !== undefined) entetes["Content-Type"] = "application/json";
   if (methode !== "GET") entetes["X-CSRF-Token"] = csrf;
-  const r = await fetch(chemin, {
+  const base = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "";
+  const r = await fetch(`${base}${chemin}`, {
     method: methode, credentials: "same-origin", headers: entetes,
     body: options.corps === undefined ? undefined : JSON.stringify(options.corps),
   });
