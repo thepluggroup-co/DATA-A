@@ -1,0 +1,104 @@
+# JARVIS MK-X .gitignore
+
+# API keys and secrets
+config/api_keys.json
+config/.env
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Runtime state (databases, caches)
+cache/
+data/
+memory/*.db
+memory/*.db-journal
+memory/sessions/
+
+# JARVIS Orbit Chromium profiles (runtime state, never commit)
+config/browser_profiles/
+
+# Logs
+logs/
+*.log
+daemon.log
+web_boot.log
+
+# Temporary
+temp/
+scratch/
+*.tmp
+.tmp*
+.tmp_rebuild/
+
+# MCP file-server sandbox root
+.sandbox/
+
+# Benchmark runtime output
+benchmark/results/
+
+# Test & Lint output dumps
+*_output.txt
+*_results.txt
+audit.log
+audit_*.txt
+audit_*.json
+audits/ruff_*.txt
+audits/*_output.txt
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# IDE / session metadata
+.kilocode/
+.idea/
+.vscode/
+.freebuff/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+node_modules/
+
+# Vendored / archived reference trees (never commit)
+migration/
+dev_artifacts/
+vendor/
+benchmark/results/optimizer/
+
+# Random dev scratch
+fix*.py
+fix2.py
+fix3.py
+optimize_*.py
+optimize_budget_integration.py
+verify_*.py
+verify.ps1
+check_*.py
+tokenhance.py
+tokentracking.py
+token_monitoring.py
+quick_fix.py
+*.bak
+*.tsbuildinfo
+
+# Placeholder leftovers
+path/
+orbit-profile/
+.orbit-profile/
+.coverage
+mypy.ini

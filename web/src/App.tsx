@@ -22,6 +22,7 @@ import { UsineNotifications } from "./pages/UsineNotifications";
 import { UsineTerrain } from "./pages/UsineTerrain";
 import { UsineRecommandations } from "./pages/UsineRecommandations";
 import { Assistant } from "./pages/Assistant";
+import { UsineSynthese } from "./pages/UsineSynthese";
 
 type Session = { moi: Moi | null; definir: (m: Moi | null) => void };
 const ContexteSession = createContext<Session>({ moi: null, definir: () => undefined });
@@ -43,6 +44,7 @@ const MODULES_USINE = [
   { vers: "/usine/parametrage", nom: "Paramétrage", icone: "audit" },
   { vers: "/usine/supervision", nom: "Supervision terrain", icone: "fiches" },
   { vers: "/usine/analyses", nom: "Analyses & validations", icone: "croisement" },
+  { vers: "/usine/synthese", nom: "Synthèse exécutive", icone: "rapport" },
   { vers: "/usine/formulaire", nom: "Formulaire & dictionnaire", icone: "fiches" },
   { vers: "/usine/echantillonnage", nom: "Échantillonnage", icone: "projets" },
   { vers: "/usine/formation", nom: "Formation enquêteurs", icone: "clients" },
@@ -165,6 +167,7 @@ export function Application(): ReactNode {
         <Route path="/usine/parametrage" element={<Protege usine enfants={<UsineParametrage />} />} />
         <Route path="/usine/supervision" element={<Protege usine enfants={<UsineSupervision />} />} />
         <Route path="/usine/analyses" element={<Protege usine enfants={<UsineAnalyses />} />} />
+        <Route path="/usine/synthese" element={<Protege usine enfants={<UsineSynthese />} />} />
         <Route path="/usine/formulaire" element={<Protege usine enfants={<UsineFormulaire />} />} />
         <Route path="/usine/echantillonnage" element={<Protege usine enfants={<UsineEchantillonnage />} />} />
         <Route path="/usine/formation" element={<Protege usine enfants={<UsineFormation />} />} />

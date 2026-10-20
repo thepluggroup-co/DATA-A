@@ -1,0 +1,75 @@
+[project]
+name = "jarvis1"
+version = "0.1.0"
+description = "JARVIS MK-X — Autonomous Engineering Agent"
+requires-python = ">=3.11"
+license = { text = "Proprietary — All Rights Reserved" }
+
+[tool.uv.workspace]
+members = ["packages/*", "plugins/*", "apps/*", "vendor/*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = [
+    "ui/*.tcss",
+    "inference_engine",
+    "knowledge_graph",
+    "agents",
+    "systems",
+    "legacy",
+    "_quarantine",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "PLW"]
+ignore = [
+    "BLE001",
+    "S110",
+    "PLW0603",
+    "PLW0602",
+    "PLW1508",
+    "B023",
+    "B008",
+    "B007",
+    "E402",
+    "PLW2901",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "jarvis_core", "jarvis_models", "jarvis_tools", "jarvis_memory",
+    "jarvis_mcp", "jarvis_routing", "jarvis_verification", "jarvis_ui",
+    "jarvis_ollama", "jarvis_openrouter", "jarvis_gemini", "jarvis_groq",
+    "core", "memory", "providers", "tools", "runtime", "cli", "security",
+]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# JS-expression templates deliberately use %/.format over f-strings (escaped
+# braces inside JS bodies). Line-length exceptions are long embedded strings.
+"orbit/cdp.py" = ["UP031", "UP032", "E501"]
+"memory/user_profile.py" = ["E501"]
+"tools/__init__.py" = ["E501"]
+"core/harness_selector.py" = ["E501"]
+
+# Benchmark argparse help strings run long; the timing callback lambda keeps
+# the controller reference in scope while _time() measures the raw call.
+"benchmark/gate.py" = ["E501"]
+"benchmark/orbit_timing.py" = ["PLW0108"]
+
+# One-off dev/audit tooling: cp1252 decode fallbacks (E722) and CLI progress
+# prints (E501) are intentional; subprocess probes check the rc explicitly.
+"scripts/*" = ["E501", "E722", "PLW1510"]
+
+# Eval system-prompt text is prose; line length is layout guidance, not a rule.
+"optimizer/run_eval.py" = ["E501"]
+
+# Tests intentionally use mock lambdas, one-line assert rows, long fixture
+# strings, and assert-False negative checks.
+"tests/*" = ["PLW0108", "E702", "E501", "E731", "B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "browser: live Chromium/Playwright integration tests (opt-in via JARVIS_RUN_BROWSER_LIVE=1)",
+]

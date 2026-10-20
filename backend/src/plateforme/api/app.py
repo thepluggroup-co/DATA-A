@@ -1,4 +1,4 @@
-"""Application FastAPI : authentification, espace client, console usine, sécurité (en-têtes, CSRF, limites)."""
+﻿"""Application FastAPI : authentification, espace client, console usine, sÃ©curitÃ© (en-tÃªtes, CSRF, limites)."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ from plateforme.stockage.modeles import (
 
 METHODES_SURES = {"GET", "HEAD", "OPTIONS"}
 SANS_CSRF = {"/api/auth/connexion"}
-PREFIXE_TERRAIN = "/api/terrain/"      # jeton en en-tête Authorization, jamais de cookie : pas de CSRF possible
+PREFIXE_TERRAIN = "/api/terrain/"      # jeton en en-tÃªte Authorization, jamais de cookie : pas de CSRF possible
 LIMITEES = {"/api/auth/connexion", "/api/terrain/activation"}
 EN_TETES = {
     "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; "
@@ -58,12 +58,12 @@ EN_TETES = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)",      # application enquêteur : GPS et photo
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)",      # application enquÃªteur : GPS et photo
     "Cross-Origin-Opener-Policy": "same-origin",
 }
 
 
-# ------------------------------------------------------------------------------------------------ dépendances
+# ------------------------------------------------------------------------------------------------ dÃ©pendances
 def _client(c: Annotated[Courant, Depends(courant)]) -> Courant:
     return exiger_complet(c)
 
@@ -71,7 +71,7 @@ def _client(c: Annotated[Courant, Depends(courant)]) -> Courant:
 def _usine(c: Annotated[Courant, Depends(courant)]) -> Courant:
     c = exiger_complet(c)
     if not c.usine:
-        raise HTTPException(403, "réservé à l'usine")
+        raise HTTPException(403, "rÃ©servÃ© Ã  l'usine")
     return c
 
 
@@ -85,15 +85,15 @@ def _bd_usine(request: Request, c: Annotated[Courant, Depends(_usine)]) -> Itera
 
 Client = Annotated[Courant, Depends(_client)]
 Usine = Annotated[Courant, Depends(_usine)]
-# scope="function" : la transaction est validée (ou échoue, visiblement) AVANT l'envoi de la réponse. Par défaut, FastAPI
-# fermerait la dépendance APRÈS l'envoi : le navigateur pourrait relire avant la validation, et un échec de validation
-# serait masqué derrière un 200 (défaut trouvé par les tests de bout en bout).
+# scope="function" : la transaction est validÃ©e (ou Ã©choue, visiblement) AVANT l'envoi de la rÃ©ponse. Par dÃ©faut, FastAPI
+# fermerait la dÃ©pendance APRÃˆS l'envoi : le navigateur pourrait relire avant la validation, et un Ã©chec de validation
+# serait masquÃ© derriÃ¨re un 200 (dÃ©faut trouvÃ© par les tests de bout en bout).
 BD = Annotated[Session, Depends(_bd, scope="function")]
 BDUsine = Annotated[Session, Depends(_bd_usine, scope="function")]
 BDAuth = Annotated[Session, Depends(bd_auth, scope="function")]
 
 
-# ------------------------------------------------------------------------------------------------ schémas
+# ------------------------------------------------------------------------------------------------ schÃ©mas
 class Connexion(BaseModel):
     email: str = Field(max_length=254)
     mot_de_passe: str = Field(max_length=200)
@@ -164,10 +164,27 @@ class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
 
+class MemoAssistant(BaseModel):
+    projet: str
+    type: str = Field(pattern=r"^(note|decision|preuve|limite)$")
+    contenu: str = Field(min_length=2, max_length=4000)
+
 class ProcedureAnalyse(BaseModel):
     methode: str = Field(pattern=r"^(tri_plat|croisement|comparaison|regression|acp|classification)$")
     variable: str = Field(default="", max_length=120)
     filtre: str = Field(default="", max_length=500)
+
+class RecommandationProjet(BaseModel):
+    constat: str = Field(min_length=3, max_length=1000)
+    preuve: str = Field(min_length=2, max_length=1000)
+    action: str = Field(min_length=3, max_length=1000)
+    risque: str = Field(default="", max_length=500)
+    priorite: str = Field(default="moyenne", pattern=r"^(basse|moyenne|haute)$")
+
+class DecisionRecommandation(BaseModel):
+    decision: str = Field(pattern=r"^(validee|rejetee)$")
+    commentaire: str = Field(default="", max_length=2000)
+    preuve: str = Field(default="", max_length=1000)
 
 
 # ------------------------------------------------------------------------------------------------ outils
@@ -178,7 +195,7 @@ def _moi(u: Utilisateur, o: Organisation, sw: SessionWeb) -> dict[str, Any]:
 
 
 def _projet(s: Session, ident: str) -> Projet:
-    p = s.get(Projet, uuid_ou_404(ident))                        # RLS : un projet d'un autre client est « introuvable »
+    p = s.get(Projet, uuid_ou_404(ident))                        # RLS : un projet d'un autre client est Â« introuvable Â»
     if p is None:
         raise HTTPException(404, "projet introuvable")
     return p
@@ -244,7 +261,7 @@ def creer_app(cfg: Config) -> FastAPI:
             while fenetre and maintenant - fenetre[0] > 600:
                 fenetre.popleft()
             if len(fenetre) >= 20:
-                return JSONResponse({"detail": "trop de tentatives, réessayez plus tard"}, status_code=429)
+                return JSONResponse({"detail": "trop de tentatives, rÃ©essayez plus tard"}, status_code=429)
             fenetre.append(maintenant)
         reponse = await suite(request)
         for k, v in EN_TETES.items():
@@ -257,8 +274,8 @@ def creer_app(cfg: Config) -> FastAPI:
 
     # -------------------------------------------------------------------------------------------- authentification
     def _echec(utilisateur_id: uuid.UUID, action: str, compter: bool) -> None:
-        """Échec enregistré dans SA transaction, validée avant le refus : sinon l'erreur annulerait le compteur de
-        verrouillage et la ligne d'audit (défaut trouvé par les tests de la phase 7)."""
+        """Ã‰chec enregistrÃ© dans SA transaction, validÃ©e avant le refus : sinon l'erreur annulerait le compteur de
+        verrouillage et la ligne d'audit (dÃ©faut trouvÃ© par les tests de la phase 7)."""
         with app.state.dataa.sessions() as s2, s2.begin():
             u = s2.get(Utilisateur, utilisateur_id)
             assert u is not None
@@ -272,7 +289,7 @@ def creer_app(cfg: Config) -> FastAPI:
     def connexion(d: Connexion, reponse: Response, s: BDAuth) -> dict[str, Any]:
         u = utilisateur_par_email(s, d.email)
         if u is not None and u.bloque_jusqu and u.bloque_jusqu > securite.maintenant():
-            raise HTTPException(429, "compte temporairement bloqué après plusieurs échecs")
+            raise HTTPException(429, "compte temporairement bloquÃ© aprÃ¨s plusieurs Ã©checs")
         if u is None or not u.actif or not securite.verifier(u.hash_mdp, d.mot_de_passe):
             if u is not None:
                 _echec(u.id, "connexion_echec", compter=True)
@@ -294,7 +311,7 @@ def creer_app(cfg: Config) -> FastAPI:
         assert u is not None
         if not u.totp_secret or not securite.verifier_totp(u.totp_secret, d.code):
             _echec(u.id, "totp_echec", compter=True)
-            raise HTTPException(401, "code de vérification incorrect")
+            raise HTTPException(401, "code de vÃ©rification incorrect")
         sw = s.get(SessionWeb, c.session.empreinte)
         assert sw is not None
         sw.second_facteur = True
@@ -309,7 +326,7 @@ def creer_app(cfg: Config) -> FastAPI:
             if sw is not None:
                 s.delete(sw)
         _cookie(reponse, "", cfg, effacer=True)
-        return {"etat": "déconnecté"}
+        return {"etat": "dÃ©connectÃ©"}
 
     @app.get("/api/moi")
     def moi(c: Annotated[Courant, Depends(courant)]) -> dict[str, Any]:
@@ -325,33 +342,33 @@ def creer_app(cfg: Config) -> FastAPI:
     def suivi(ident: str, c: Client, s: BD) -> dict[str, Any]:
         p = _projet(s, ident)
         if not p.dossier or not p.base_analyse:
-            raise HTTPException(409, "suivi indisponible : terrain non démarré")
+            raise HTTPException(409, "suivi indisponible : terrain non dÃ©marrÃ©")
         return donnees.suivi(chemin_sur(cfg, p.dossier), donnees.jeu(chemin_sur(cfg, p.base_analyse)))
 
     @app.get("/api/projets/{ident}/variables")
     def variables(ident: str, c: Client, s: BD) -> list[dict[str, Any]]:
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrée")
+            raise HTTPException(409, "base d'analyse non livrÃ©e")
         return donnees.variables(donnees.jeu(chemin_sur(cfg, p.base_analyse)))
 
     @app.get("/api/projets/{ident}/tri-plats")
     def tri_plat(ident: str, variable: str, c: Client, s: BD) -> dict[str, Any]:
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrée")
+            raise HTTPException(409, "base d'analyse non livrÃ©e")
         jd = donnees.jeu(chemin_sur(cfg, p.base_analyse))
         if variable not in jd.table.columns:
             raise HTTPException(422, "variable inconnue")
         serie = jd.table[variable].dropna().value_counts(dropna=False)
         total = int(serie.sum())
-        return {"variable": variable, "base": total, "lignes": [{"modalite": str(k), "effectif": int(v), "pourcentage": round(float(v) * 100 / total, 2)} for k, v in serie.items()], "avertissements": ["Les modalités rares doivent être interprétées avec prudence."]}
+        return {"variable": variable, "base": total, "lignes": [{"modalite": str(k), "effectif": int(v), "pourcentage": round(float(v) * 100 / total, 2)} for k, v in serie.items()], "avertissements": ["Les modalitÃ©s rares doivent Ãªtre interprÃ©tÃ©es avec prudence."]}
 
     @app.post("/api/projets/{ident}/croisements")
     def croisement(ident: str, d: DemandeCroisement, c: Client, s: BD) -> JSONResponse:
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrée")
+            raise HTTPException(409, "base d'analyse non livrÃ©e")
         droits = _droits(s, c.organisation.id) if not c.usine else {}
         plafond = droits.get("croisements_par_mois")
         if plafond is not None and _croisements_du_mois(s, c.organisation.id) >= int(plafond):
@@ -389,7 +406,7 @@ def creer_app(cfg: Config) -> FastAPI:
         ws.title = "CROISEMENT"
         ws.append(["", *[f"{lib} ({le})" for _, lib, le in r.colonnes]])
         for (_, lib), cellules in zip(r.lignes, r.cellules, strict=True):
-            ws.append([lib, *[("—" if x.pct is None else round(x.pct, 1)) if x.effectif is not None else "< k" for x in cellules]])
+            ws.append([lib, *[("â€”" if x.pct is None else round(x.pct, 1)) if x.effectif is not None else "< k" for x in cellules]])
         ws.append(["Base", *r.bases_colonnes])
         ws.append([])
         ws.append(["Commentaire", r.commentaire])
@@ -426,7 +443,7 @@ def creer_app(cfg: Config) -> FastAPI:
         from plateforme.projet.brief import Brief, charger_tarifs, pre_estimation
 
         if c.utilisateur.role not in {"client_admin"} | securite.ROLES_USINE:
-            raise HTTPException(403, "seul l'administrateur du client dépose un brief")
+            raise HTTPException(403, "seul l'administrateur du client dÃ©pose un brief")
         code = "BRIEF_" + uuid.uuid4().hex[:8].upper()
         brief = Brief.model_validate({"etude": code, "version": "01", "titre": d.titre, "besoin": d.besoin,
                                       "antecedents": d.antecedents, "marche": d.marche, "produits": d.produits, "attentes": d.attentes,
@@ -443,7 +460,7 @@ def creer_app(cfg: Config) -> FastAPI:
                     if ref.localite(v).type.value != "ville":
                         raise KeyError(v)
                 except KeyError:
-                    raise HTTPException(422, f"ville inconnue du référentiel : {v}") from None
+                    raise HTTPException(422, f"ville inconnue du rÃ©fÃ©rentiel : {v}") from None
         dossier = Path(str(c.organisation.id)) / code
         chemin = chemin_sur(cfg, str(dossier))
         chemin.mkdir(parents=True, exist_ok=True)
@@ -477,7 +494,7 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.get("/api/cabinet/roles")
     def cabinet_roles(c: Usine) -> list[dict[str, Any]]:
-        """Catalogue des rôles du cabinet et de leurs permissions métier."""
+        """Catalogue des rÃ´les du cabinet et de leurs permissions mÃ©tier."""
         return [{"role": role, "permissions": sorted(perms)} for role, perms in securite.PERMISSIONS_PAR_ROLE.items()
                 if role.startswith("cabinet") or role.startswith("consultant") or role in {"expert_etude", "enqueteur"}]
 
@@ -503,7 +520,11 @@ def creer_app(cfg: Config) -> FastAPI:
                        "expert_etude": ("expert", "livre"), "cabinet_admin": (courant, "livre"), "usine_admin": (courant, "livre")}
         attendu = transitions.get(role)
         if attendu is None or courant != attendu[0]:
-            raise HTTPException(403, f"validation impossible pour le rôle {role} à l'étape {courant}")
+            raise HTTPException(403, f"validation impossible pour le rÃ´le {role} Ã  l'Ã©tape {courant}")
+        if attendu[1] == "livre":
+            en_attente = [r for r in p.parametres.get("recommandations", []) if r.get("statut") == "a_valider"]
+            if en_attente:
+                raise HTTPException(409, f"livraison bloquÃ©e : {len(en_attente)} recommandation(s) Ã  valider")
         historique = list(p.parametres.get("workflow", {}).get("historique", []))
         historique.append({"etape": attendu[1], "role": role, "utilisateur": c.utilisateur.nom,
                            "commentaire": d.commentaire, "version": d.version, "regle": d.regle,
@@ -533,17 +554,119 @@ def creer_app(cfg: Config) -> FastAPI:
         audit.journaliser(s, "procedure_analyse_creee", p.code, entree, p.organisation_id, c.utilisateur.id)
         return entree
 
+    @app.get("/api/cabinet/projets/{ident}/recommandations")
+    def recommandations_lire(ident: str, c: Usine, s: BDUsine) -> list[dict[str, Any]]:
+        return list(_projet(s, ident).parametres.get("recommandations", []))
+
+    @app.post("/api/cabinet/projets/{ident}/recommandations")
+    def recommandation_creer(ident: str, d: RecommandationProjet, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident); items = list(p.parametres.get("recommandations", []))
+        item = {"id": uuid.uuid4().hex[:10], **d.model_dump(), "statut": "a_valider", "auteur": c.utilisateur.nom, "le": securite.maintenant().isoformat(), "historique": []}
+        items.append(item); p.parametres = {**p.parametres, "recommandations": items}
+        audit.journaliser(s, "recommandation_creee", p.code, item, p.organisation_id, c.utilisateur.id)
+        return item
+
+    @app.post("/api/cabinet/projets/{ident}/recommandations/{rid}/decision")
+    def recommandation_decider(ident: str, rid: str, d: DecisionRecommandation, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident); items = list(p.parametres.get("recommandations", [])); item = next((x for x in items if x.get("id") == rid), None)
+        if item is None: raise HTTPException(404, "recommandation introuvable")
+        if d.decision == "rejetee" and not d.commentaire.strip(): raise HTTPException(422, "un commentaire est obligatoire pour un rejet")
+        item = {**item, "statut": d.decision, "historique": [*item.get("historique", []), {"decision": d.decision, "commentaire": d.commentaire, "preuve": d.preuve, "expert": c.utilisateur.nom, "le": securite.maintenant().isoformat()}]}
+        p.parametres = {**p.parametres, "recommandations": [item if x.get("id") == rid else x for x in items]}
+        audit.journaliser(s, "recommandation_decidee", p.code, item, p.organisation_id, c.utilisateur.id)
+        return item
+
     @app.post("/api/assistant")
     def assistant_question(d: QuestionAssistant, c: Client, s: BD) -> dict[str, Any]:
-        """Copilote gouverné : contexte minimal, aucune statistique inventée."""
+        """Copilote gouverné : contexte minimal, outils déclaratifs et preuve obligatoire."""
         contexte: dict[str, Any] = {"organisation": c.organisation.nom}
+        analyses = []
+        recommandations = []
         if d.projet:
             p = _projet(s, d.projet)
+            analyses = list(p.parametres.get("analyses", []))
+            recommandations = list(p.parametres.get("recommandations", []))
             contexte.update({"projet": p.code, "statut": p.statut,
                              "versions": p.parametres.get("versions", []),
-                             "workflow": p.parametres.get("workflow", {})})
-        return {"reponse": "Je peux analyser ce contexte, mais aucune conclusion chiffrée n’est produite sans base, filtre et méthode validés.",
-                "preuves": contexte, "limites": ["moteur IA externe non connecté", "validation humaine requise"]}
+                             "workflow": p.parametres.get("workflow", {}),
+                             "memoire": p.parametres.get("assistant_memoire", [])[-20:],
+                             "recommandations_validees": [r for r in recommandations if r.get("statut") == "validee"]})
+        outils = ["calculer_echantillon", "executer_analyse", "construire_tri_croise", "generer_recommandation", "produire_synthese"]
+        audit.journaliser(s, "assistant_question", d.projet or "global", {"question": d.question[:500], "outils": outils}, c.organisation.id, c.utilisateur.id)
+        valides = [a for a in analyses if a.get("statut") == "validee"]
+        recs_valides = [r for r in recommandations if r.get("statut") == "validee"]
+        attentes = [a for a in analyses if a.get("statut") in {"brouillon", "a_valider"}]
+        if d.projet:
+            reponse = (f"Étude {contexte.get('projet')} : {len(valides)} analyse(s) validée(s), "
+                       f"{len(recs_valides)} recommandation(s) validée(s) et {len(attentes)} élément(s) en attente. ")
+            reponse += "Je peux détailler les preuves disponibles ou préparer une synthèse."
+        else:
+            reponse = "Sélectionnez une étude pour obtenir une réponse fondée sur ses preuves et validations."
+        return {"reponse": reponse,
+                "preuves": contexte, "outils_disponibles": outils,
+                "verification": {"statut": "a_verifier", "preuves_requises": True, "validation_humaine_requise": True},
+                "limites": ["moteur IA externe non connecté", "validation humaine requise"]}
+
+    @app.get("/api/assistant/outils")
+    def assistant_outils(c: Client) -> dict[str, Any]:
+        """Registre public des capacités que le Copilote peut proposer au rôle courant."""
+        return {"outils": [
+            {"nom": "calculer_echantillon", "permission": "projet.piloter", "mutation": False},
+            {"nom": "executer_analyse", "permission": "analyse.executer", "mutation": False},
+            {"nom": "construire_tri_croise", "permission": "analyse.executer", "mutation": False},
+            {"nom": "generer_recommandation", "permission": "analyse.recommander", "mutation": True},
+            {"nom": "produire_synthese", "permission": "rapport.produire", "mutation": True},
+        ], "role": c.utilisateur.role}
+
+    @app.get("/api/assistant/memoire/{ident}")
+    def assistant_memoire_lire(ident: str, c: Client, s: BD) -> dict[str, Any]:
+        """Mémoire contextualisée d'une étude, isolée par organisation."""
+        p = _projet(s, ident)
+        if p.organisation_id != c.organisation.id and not c.usine:
+            raise HTTPException(404, "étude introuvable")
+        memoire = list(p.parametres.get("assistant_memoire", []))
+        return {"projet": p.code, "entrees": memoire}
+
+    @app.post("/api/assistant/memoire")
+    def assistant_memoire_ecrire(d: MemoAssistant, c: Client, s: BD) -> dict[str, Any]:
+        p = _projet(s, d.projet)
+        if p.organisation_id != c.organisation.id and not c.usine:
+            raise HTTPException(404, "étude introuvable")
+        if not c.usine and "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour enrichir la mémoire")
+        entree = {"type": d.type, "contenu": d.contenu, "auteur": c.utilisateur.nom,
+                  "le": securite.maintenant().isoformat()}
+        memoire = list(p.parametres.get("assistant_memoire", [])); memoire.append(entree)
+        p.parametres = {**p.parametres, "assistant_memoire": memoire[-100:]}
+        audit.journaliser(s, "assistant_memoire_ajoutee", p.code, entree, p.organisation_id, c.utilisateur.id)
+        return entree
+
+    @app.get("/api/cabinet/projets/{ident}/synthese")
+    def synthese_executive(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident); recommandations = [r for r in p.parametres.get("recommandations", []) if r.get("statut") == "validee"]
+        analyses = [a for a in p.parametres.get("analyses", []) if a.get("statut") in {"validee", "a_valider"}]
+        return {"projet": p.code, "statut": p.statut, "faits": analyses, "actions": recommandations,
+                "interpretations": [r.get("constat", "") for r in recommandations],
+                "risques": [r.get("risque", "") for r in recommandations if r.get("risque")],
+                "limites": ["SynthÃ¨se gÃ©nÃ©rÃ©e uniquement Ã  partir des Ã©lÃ©ments versionnÃ©s et validÃ©s."]}
+
+    @app.get("/api/cabinet/projets/{ident}/qualite-terrain")
+    def qualite_terrain(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from plateforme.stockage.modeles import MetaFiche, Signalement
+        p = _projet(s, ident); fiches = list(s.scalars(select(MetaFiche).where(MetaFiche.projet_id == p.id)))
+        rapides = [f for f in fiches if f.duree_s is not None and f.duree_s < 60]
+        sans_position = [f for f in fiches if f.latitude is None or f.longitude is None]
+        signalements = list(s.scalars(select(Signalement).where(Signalement.projet_id == p.id)))
+        positions = [(round(float(f.latitude), 4), round(float(f.longitude), 4)) for f in fiches if f.latitude is not None and f.longitude is not None]
+        doublons = len(positions) - len(set(positions))
+        incoherences = sum(1 for f in fiches if f.duree_s is not None and (f.duree_s <= 0 or f.duree_s > 86400))
+        penalites = len(rapides) * 20 + len(sans_position) * 5 + doublons * 10 + incoherences * 10
+        score = round(max(0.0, 100.0 - penalites / max(1, len(fiches))), 1)
+        recommandations = []
+        if rapides: recommandations.append("Controler manuellement les fiches trop rapides.")
+        if doublons: recommandations.append("Verifier les doublons de position et de point d enquete.")
+        if incoherences: recommandations.append("Revoir les durees ou metadonnees incoherentes.")
+        return {"fiches": len(fiches), "score_global": score, "fiches_trop_rapides": len(rapides), "sans_position": len(sans_position), "doublons_probables": doublons, "incoherences": incoherences, "signalements_ouverts": len(signalements), "recommandations": recommandations}
 
     @app.post("/api/cabinet/projets/{ident}/versions")
     def cabinet_version_creer(ident: str, d: VersionProjet, c: Usine, s: BDUsine) -> dict[str, Any]:
@@ -614,7 +737,7 @@ def creer_app(cfg: Config) -> FastAPI:
         except securite.MotDePasseFaible as e:
             raise HTTPException(422, str(e)) from e
         if utilisateur_par_email(s, d.admin_email) is not None:
-            raise HTTPException(409, "adresse déjà utilisée")
+            raise HTTPException(409, "adresse dÃ©jÃ  utilisÃ©e")
         o = Organisation(nom=d.nom, type="client")
         s.add(o)
         s.flush()
@@ -646,7 +769,7 @@ def creer_app(cfg: Config) -> FastAPI:
         if f is None:
             raise HTTPException(404, "facture introuvable")
         if f.statut == "annulee":
-            raise HTTPException(409, "facture annulée")
+            raise HTTPException(409, "facture annulÃ©e")
         s.add(Paiement(organisation_id=f.organisation_id, facture_id=f.id, montant=Decimal(str(d.montant)), moyen=d.moyen,
                        reference=d.reference, saisi_par=c.utilisateur.id))
         s.flush()
@@ -672,8 +795,8 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.post("/api/usine/projets/{ident}/missions")
     def usine_missions(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
-        """Crée un code de mission par poste du plan de terrain qui n'en a pas encore. Les codes ne sont montrés qu'UNE fois
-        (seule leur empreinte est conservée) : à imprimer sur l'ordre de mission."""
+        """CrÃ©e un code de mission par poste du plan de terrain qui n'en a pas encore. Les codes ne sont montrÃ©s qu'UNE fois
+        (seule leur empreinte est conservÃ©e) : Ã  imprimer sur l'ordre de mission."""
         from plateforme.projet import projet as pj
 
         p = _projet(s, ident)
@@ -720,11 +843,11 @@ def creer_app(cfg: Config) -> FastAPI:
             f = (racine_web / chemin).resolve()
             if chemin and f.is_file() and racine_web in f.parents:
                 return FileResponse(f)
-            return FileResponse(racine_web / "index.html")          # application monopage : routes gérées par le front
+            return FileResponse(racine_web / "index.html")          # application monopage : routes gÃ©rÃ©es par le front
 
     return app
 
 
 def application() -> FastAPI:
-    """Point d'entrée uvicorn (« plateforme.api.app:application », --factory) : configuration par variables d'environnement."""
+    """Point d'entrÃ©e uvicorn (Â« plateforme.api.app:application Â», --factory) : configuration par variables d'environnement."""
     return creer_app(Config.depuis_env())

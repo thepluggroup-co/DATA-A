@@ -1,0 +1,463 @@
+"""ToolExecutionService -- single tool execution boundary for JARVIS.
+
+All tool execution MUST pass through this service. No protocol, adapter,
+or agent path may bypass it.
+
+Architecture:
+    Terminal ----|
+    MCP ---------|
+    ACP ---------|---> ToolExecutionService ---> Permission ---> Executor ---> Result
+    Codex -------|
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+from core.agent.observer import TaskObserver
+from core.agent.permissions import PermissionEngine
+from core.agent.state import FailureClass
+from core.agent.tools import AgentToolExecutor
+from core.decision_logger import DecisionLogger
+from providers.types import ToolCall
+from security.redaction import redact_sensitive
+
+logger = logging.getLogger("jarvis.tool_execution_service")
+
+# ── Timeout envelope (jacobian-style phase leases) ──────────────────────────
+# The wall deadline (tool.timeout_seconds) is split BEFORE execution: a
+# delivery lease and a teardown lease are reserved out of the wall, and the
+# executor is granted only the remainder as its backend budget. A timed-out
+# backend therefore still has reserved time to set its cancellation signal,
+# log abandonment, and surface a classified result instead of being killed
+# mid-delivery by the outer wall.
+_TIMEOUT_OWNER_BACKEND = "backend_timeout"
+_TIMEOUT_OWNER_WALL = "operation_wall"
+_DELIVERY_BASE_S = 0.02            # fixed delivery lease
+_DELIVERY_BYTES_PER_S = 20_000_000  # calibrated delivery rate (bytes/s)
+_TEARDOWN_BASE_S = 0.02            # fixed teardown lease
+_TEARDOWN_WALL_FRACTION = 0.02     # teardown scales with the wall...
+_TEARDOWN_MAX_S = 1.0              # ...bounded so long tools keep their budget
+
+# Task-local session identity. A shared ToolExecutionService can serve several
+# sessions concurrently; storing the session on ``self`` races. The contextvar
+# is copied per asyncio task, so a call's session (and any internal call it
+# makes without an explicit session) stays attributed to the right session.
+_CURRENT_SESSION: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "jarvis_tool_session_id", default="",
+)
+
+
+@dataclass
+class ToolExecutionResult:
+    """Result of executing a single tool call."""
+    tool_name: str = ""
+    call_id: str = ""
+    success: bool = False
+    output: str = ""
+    error: str = ""
+    duration_ms: float = 0.0
+    permission_denied: bool = False
+    permission_reason: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    failure_class: Any | None = None
+
+
+class ToolExecutionService:
+    """Shared service for executing tool calls with permission checks.
+
+    Used by:
+    - AgentLoop (during agent execution)
+    - MCPAdapter (external MCP clients)
+    - ACPAdapter (external ACP clients)
+    - CodexExecAdapter (Codex-compatible callers)
+
+    All paths go through the same permission engine, executor, and observer.
+    """
+
+    def __init__(
+        self,
+        registry,
+        permissions: PermissionEngine | None = None,
+        executor: AgentToolExecutor | None = None,
+        observer: TaskObserver | None = None,
+        decision_logger: DecisionLogger | None = None,
+        bus=None,
+        mode: str = "agent",
+        session_id: str = "",
+    ):
+        self._registry = registry
+        from core.decision_logger import get_decision_logger
+        _logger = decision_logger or get_decision_logger()
+        self._permissions = permissions or PermissionEngine(_logger, mode=mode)
+        self._executor = executor or AgentToolExecutor(registry, _logger)
+        self._observer = observer or TaskObserver()
+        self._logger = _logger
+        self._bus = bus
+        self._mode = mode
+        # Stable default session id (never mutated per call). Per-call identity
+        # travels through ``_CURRENT_SESSION`` so concurrent sessions cannot
+        # contaminate each other's events.
+        self._session_id: str = session_id
+
+    async def execute_tool(
+        self,
+        call: ToolCall,
+        trace_id: str = "",
+        session_id: str = "",
+        append_to_messages: list[dict[str, Any]] | None = None,
+        state: Any | None = None,
+        internal: bool = False,
+    ) -> ToolExecutionResult:
+        """Execute a single tool call with full permission + observer lifecycle.
+
+        Returns a ToolExecutionResult.  If append_to_messages is provided,
+        the tool response is appended to it (for AgentLoop compatibility).
+
+        Pass ``internal=True`` for internal/verification tool calls so they do
+        not surface as task steps in the observation.
+
+        Session identity is scoped to this call: an explicit ``session_id`` is
+        installed in ``_CURRENT_SESSION`` (visible to nested internal calls
+        made while the tool runs) and restored on exit -- success, denial, or
+        exception -- so a reused asyncio task cannot leak one session's
+        identity into later calls.
+        """
+        token = _CURRENT_SESSION.set(session_id) if session_id else None
+        if not session_id:
+            session_id = _CURRENT_SESSION.get() or self._session_id
+        try:
+            return await self._execute_tool_in_context(
+                call, trace_id, session_id, append_to_messages, state, internal,
+            )
+        finally:
+            if token is not None:
+                _CURRENT_SESSION.reset(token)
+
+    async def _execute_tool_in_context(
+        self,
+        call: ToolCall,
+        trace_id: str,
+        session_id: str,
+        append_to_messages: list[dict[str, Any]] | None,
+        state: Any | None,
+        internal: bool,
+    ) -> ToolExecutionResult:
+        """Execution body -- session context is already resolved and installed."""
+        start = time.perf_counter()
+        has_obs = self._observer.observation is not None and not internal
+        step = self._observer.step_started(call.name, call.arguments, call.id) if has_obs else None
+
+        # JSON-repair guard: unrepairable argument JSON flows here from the
+        # provider parse sites with __json_error set. Reject as MALFORMED_TOOL
+        # so the model retries — never execute a tool on guessed/empty args.
+        # The retry nudge includes the model's original raw JSON and the
+        # tool's real schema so the FIRST retry is usually correct.
+        from providers.json_repair import JSON_ERROR_KEY, JSON_RAW_KEY
+        if isinstance(call.arguments, dict) and call.arguments.get(JSON_ERROR_KEY):
+            parse_err = str(call.arguments[JSON_ERROR_KEY])
+            raw_snippet = str(call.arguments.get(JSON_RAW_KEY, ""))
+            schema_tool = self._registry.get(call.name)
+            error = f"Malformed tool arguments (unparseable JSON): {parse_err}"
+            self._emit("tool.failed", {"tool": call.name, "error": error}, trace_id, session_id)
+            if step is not None:
+                self._observer.step_finished(step, "error", 0.0, error)
+            if append_to_messages is not None:
+                lines = [
+                    f"ERROR: {error}",
+                    "",
+                    "YOUR ORIGINAL ARGUMENTS (invalid JSON):",
+                    raw_snippet or "(not captured)",
+                    "",
+                    "Fix the JSON — close all quotes/brackets, escape newlines as \\n",
+                    "inside strings — and reissue the call with valid JSON arguments.",
+                ]
+                if schema_tool is not None:
+                    import json as _json
+                    try:
+                        lines += [
+                            "",
+                            f"EXPECTED SCHEMA for {call.name}:",
+                            _json.dumps(schema_tool.parameters)[:800],
+                        ]
+                    except (TypeError, ValueError):
+                        pass
+                append_to_messages.append({
+                    "role": "tool", "tool_call_id": call.id, "name": call.name,
+                    "content": "\n".join(lines),
+                })
+            return ToolExecutionResult(
+                tool_name=call.name, call_id=call.id, error=error,
+                failure_class=FailureClass.MALFORMED_TOOL,
+                duration_ms=(time.perf_counter() - start) * 1000,
+            )
+
+        # Look up tool
+        tool = self._registry.get(call.name)
+        if tool is None:
+            error = f"Tool '{call.name}' is not registered"
+            self._emit("tool.failed", {"tool": call.name, "error": error}, trace_id, session_id)
+            if step is not None:
+                self._observer.step_finished(step, "error", 0.0, error)
+            if append_to_messages is not None:
+                append_to_messages.append({
+                    "role": "tool", "tool_call_id": call.id, "name": call.name,
+                    "content": f"ERROR: {error}",
+                })
+            return ToolExecutionResult(
+                tool_name=call.name, call_id=call.id, error=error,
+                failure_class=FailureClass.MALFORMED_TOOL,
+                duration_ms=(time.perf_counter() - start) * 1000,
+            )
+
+        # Permission check
+        self._emit("tool.requested", {"tool": call.name}, trace_id, session_id)
+        allowed, reason = await self._permissions.check(
+            tool, call.arguments, trace_id, session_id,
+        )
+        self._observer.observe_permission(call.name, allowed, reason) if has_obs else None
+        if not allowed:
+            self._emit("tool.denied", {"tool": call.name, "reason": reason}, trace_id, session_id)
+            if step is not None:
+                self._observer.step_finished(step, "denied", 0.0, reason)
+            if append_to_messages is not None:
+                append_to_messages.append({
+                    "role": "tool", "tool_call_id": call.id, "name": call.name,
+                    "content": f"PERMISSION DENIED: {reason}",
+                })
+            # Every verdict is auditable: a decision to deny is as important
+            # as an executed tool. The executor only records run tools, so the
+            # service records denials here (single boundary, no bypass).
+            self._logger.record_tool(
+                trace_id, tool.permission, call.arguments,
+                allowed=False, success=False, error=reason,
+                mode=self._mode, session_id=session_id,
+            )
+            return ToolExecutionResult(
+                tool_name=call.name, call_id=call.id,
+                permission_denied=True, permission_reason=reason,
+                failure_class=FailureClass.PERMISSION_DENIED,
+                duration_ms=(time.perf_counter() - start) * 1000,
+            )
+
+        # Execute with the timeout envelope: the wall deadline minus the
+        # delivery/teardown leases is granted to the executor as its backend
+        # budget. The outer asyncio.timeout is the hard bound; its expiry is
+        # attributed as OPERATION_WALL, while a TimeoutError raised from inside
+        # the executor (its own inner timeout) is a BACKEND_TIMEOUT.
+        wall, budget, reserves = self._timeout_envelope(tool)
+        timeout_cm = asyncio.timeout(wall)
+        try:
+            async with timeout_cm:
+                result = await self._executor.execute(
+                    call.name, call.arguments, trace_id,
+                    mode=self._mode, session_id=session_id, tool_call_id=call.id,
+                    timeout_budget=budget,
+                )
+        except TimeoutError:
+            owner = (_TIMEOUT_OWNER_WALL if timeout_cm.expired()
+                     else _TIMEOUT_OWNER_BACKEND)
+            error = f"Tool '{call.name}' timed out after {wall:.0f}s ({owner})"
+            # Signal cancellation to the background thread (cooperative tools
+            # check this). Keyed exactly like the executor registers it so the
+            # live event is actually found (a leftover thread also observes a
+            # backend-set event even after the service call returns).
+            cancel_event = self._executor._active_cancellations.get(
+                call.id or f"{call.name}:{trace_id}"
+            )
+            if cancel_event is not None:
+                cancel_event.set()
+            # Log abandoned task for monitoring
+            abandoned = self._executor.abandoned_count()
+            logger.warning(
+                "Tool '%s' timed out (%s) — background thread abandoned (%d total abandoned)",
+                call.name, owner, abandoned + 1,
+            )
+            self._emit("tool.failed", {"tool": call.name, "error": error}, trace_id, session_id)
+            if step is not None:
+                self._observer.step_finished(step, "error", wall * 1000, error)
+            if append_to_messages is not None:
+                append_to_messages.append({
+                    "role": "tool", "tool_call_id": call.id, "name": call.name,
+                    "content": f"ERROR: {error}",
+                })
+            return ToolExecutionResult(
+                tool_name=call.name, call_id=call.id, error=error,
+                failure_class=FailureClass.TIMEOUT,
+                metadata={
+                    "timeout_owner": owner,
+                    "timeout_wall_s": round(wall, 4),
+                    "timeout_budget_s": round(budget, 4),
+                    **reserves,
+                },
+                duration_ms=(time.perf_counter() - start) * 1000,
+            )
+        duration_ms = result.metadata.get("duration_ms", 0.0)
+
+        # Observer: step finished
+        status = "ok" if result.success else "error"
+        if step is not None:
+            self._observer.step_finished(step, status, duration_ms, result.error)
+
+        # Redact secrets
+        content = result.output if result.success else f"ERROR: {result.error}"
+        content = redact_sensitive(content)
+
+        if append_to_messages is not None:
+            append_to_messages.append({
+                "role": "tool", "tool_call_id": call.id, "name": call.name,
+                "content": content,
+            })
+
+        if result.success:
+            self._emit("tool.executed", {"tool": call.name, "duration_ms": duration_ms}, trace_id, session_id)
+        else:
+            self._emit("tool.failed", {"tool": call.name, "error": result.error}, trace_id, session_id)
+
+        # Record tool result in AgentState if provided
+        if state is not None:
+            state.record_tool(
+                call.name, call.id, result.success, duration_ms,
+                result.output, result.error, result.metadata,
+            )
+            path = result.metadata.get("path")
+            if isinstance(path, str) and result.success:
+                state.files_changed.append(path)
+
+        result_fc = None
+        if not result.success:
+            result_fc = FailureClass.TIMEOUT if result.metadata.get("timed_out") else FailureClass.TOOL_FAILURE
+
+        return ToolExecutionResult(
+            tool_name=call.name,
+            call_id=call.id,
+            success=result.success,
+            output=content,
+            error=result.error,
+            duration_ms=duration_ms,
+            metadata=result.metadata,
+            failure_class=result_fc,
+        )
+
+    async def execute_tools(
+        self,
+        calls: list[ToolCall],
+        trace_id: str = "",
+        session_id: str = "",
+        append_to_messages: list[dict[str, Any]] | None = None,
+        state: Any | None = None,
+        *,
+        parallel: bool = True,
+    ) -> list[ToolExecutionResult]:
+        """Execute multiple tool calls.
+
+        When ``parallel`` is set (default), independent tool calls run
+        concurrently (bounded by ``Policy.max_concurrent_actions``) and their
+        tool messages are appended to ``append_to_messages`` in the original
+        input order so the model sees deterministic results. Pass
+        ``parallel=False`` to force strict sequential execution (used when a
+        caller must never overlap side effects).
+        """
+        # Resolve the concurrency cap from the active security policy. This is
+        # the enforcement of Policy.max_concurrent_actions, which was previously
+        # declared but unused. Falls back to a sane default.
+        concurrency = self._max_concurrency()
+        if not parallel or concurrency <= 1 or len(calls) <= 1:
+            results: list[ToolExecutionResult] = []
+            for call in calls:
+                result = await self.execute_tool(
+                    call, trace_id, session_id, append_to_messages, state,
+                )
+                results.append(result)
+            return results
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _run(call: ToolCall) -> ToolExecutionResult:
+            async with sem:
+                # No append here — appends are re-applied in order below.
+                return await self.execute_tool(
+                    call, trace_id, session_id, None, state,
+                )
+
+        results = await asyncio.gather(*(_run(call) for call in calls))
+        if append_to_messages is not None:
+            for call, res in zip(calls, results, strict=True):
+                # Mirror execute_tool's append semantics (including secret
+                # redaction) so parallel results are identical to sequential.
+                content = res.output if res.success else f"ERROR: {res.error}"
+                content = redact_sensitive(content)
+                append_to_messages.append({
+                    "role": "tool", "tool_call_id": res.call_id,
+                    "name": res.tool_name, "content": content,
+                })
+        return list(results)
+
+    @staticmethod
+    def _timeout_envelope(tool) -> tuple[float, float, dict[str, float]]:
+        """Split the wall deadline into reserves + backend budget.
+
+        Returns ``(wall, budget, reserves)`` where ``wall`` honours the tool's
+        declared ``timeout_seconds`` (floor 1s, as before), the delivery lease
+        scales with the tool's bounded output size (``max_output_chars``, ×4
+        for the utf-8 worst case) at the calibrated rate, and the teardown
+        lease scales with the wall (bounded). ``budget`` is what the executor
+        is allowed to spend — strictly less than ``wall``.
+        """
+        wall = max(1.0, float(getattr(tool, "timeout_seconds", 60.0)))
+        expected_bytes = max(1, int(getattr(tool, "max_output_chars", 8000))) * 4
+        delivery = _DELIVERY_BASE_S + expected_bytes / _DELIVERY_BYTES_PER_S
+        teardown = _TEARDOWN_BASE_S + min(
+            _TEARDOWN_MAX_S, wall * _TEARDOWN_WALL_FRACTION,
+        )
+        budget = max(0.05, wall - delivery - teardown)
+        return wall, budget, {
+            "delivery_reserve_s": round(delivery, 4),
+            "teardown_reserve_s": round(teardown, 4),
+        }
+
+    def _max_concurrency(self) -> int:
+        """Concurrency cap for parallel tool execution from the security policy."""
+        try:
+            from security.engine import get_security_engine
+            eng = get_security_engine()
+            raw = getattr(eng.policy, "max_concurrent_actions", 5)
+            return max(1, int(raw))
+        except Exception:
+            return 5
+
+    def list_tools(self) -> list[dict]:
+        """Return the tool catalog in OpenAI function-calling format."""
+        if self._registry is None:
+            return []
+        return self._registry.to_openai_tools()
+
+    # ── Mode management (exposed so CLI/protocols don't bypass the service) ──
+
+    @property
+    def mode(self) -> str:
+        """Current execution mode."""
+        return str(self._permissions.mode)
+
+    def set_mode(self, mode: str) -> bool:
+        """Switch execution mode (agent, plan, smart, controlled)."""
+        return self._permissions.set_mode(mode)
+
+    def _emit(self, name: str, payload: dict[str, Any] | None = None,
+              trace_id: str = "", session_id: str = "") -> None:
+        if self._bus is None:
+            return
+        try:
+            from runtime.event_bus import BusEvent
+            self._bus.publish(BusEvent(
+                name=name, payload=payload or {},
+                source="tool_execution_service", trace_id=trace_id,
+                session_id=session_id or _CURRENT_SESSION.get() or self._session_id,
+            ))
+        except Exception:
+            pass

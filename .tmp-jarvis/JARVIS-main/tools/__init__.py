@@ -1,0 +1,2402 @@
+"""JARVIS MK-X tool catalog.
+
+Builds the default tool registry used by the agent runtime. Execution
+wrappers live in core/agent/tools.py; individual tool handlers in tools/*.
+"""
+
+from __future__ import annotations
+
+# NOTE: the *_handler dispatchers at the bottom of this module call these
+# functions. They must be bound at MODULE scope -- importing them inside
+# build_default_registry() leaves the dispatchers with an unbound name, and
+# the NameError only surfaces when the tool is invoked, not at build time.
+#
+# agenda_view / web_archive are referenced through the MODULE object, never
+# rebound as bare names. Both modules export a function that shares its own
+# module's name, so `from tools.agenda_view import agenda_view` would replace
+# the `tools.agenda_view` submodule attribute with a plain function and break
+# every `from tools import agenda_view as ag` in the codebase.
+from tools import agenda_view as _agenda_view_mod
+from tools import web_archive as _web_archive_mod
+from tools.classification import classify_tool
+from tools.doc_retrieval import doc_search, doc_stats
+from tools.registry import ToolRegistry
+from tools.schema import Tool, ToolResult, tool_result
+
+agenda_add = _agenda_view_mod.agenda_add
+agenda_list = _agenda_view_mod.agenda_list
+agenda_remove = _agenda_view_mod.agenda_remove
+
+web_archive_list = _web_archive_mod.web_archive_list
+web_archive_read = _web_archive_mod.web_archive_read
+
+
+def build_default_registry() -> ToolRegistry:
+    """Register the core M0 tool set (filesystem + shell) plus world monitor."""
+    from jbrowser.tools import (
+        browser_close_tab,
+        browser_find,
+        browser_new_tab,
+        browser_permissions,
+        browser_profile,
+        browser_read,
+        browser_scroll,
+        browser_switch_tab,
+        browser_tabs,
+    )
+    from tools.api_collections import api_parse, api_run
+    from tools.audit import run_audit
+    from tools.browser import (
+        browser_click,
+        browser_extract,
+        browser_open,
+        browser_screenshot,
+        browser_status,
+        browser_type,
+    )
+    from tools.browser_wait import browser_wait
+    from tools.code_intelligence import (
+        code_ast,
+        code_callees,
+        code_callers,
+        code_definition,
+        code_imports,
+        code_references,
+        code_symbol,
+        code_typecheck,
+    )
+    from tools.data_tools import data_convert, data_query, data_stats
+    from tools.doc_export import doc_to_markdown
+    from tools.doc_report import doc_report
+    from tools.feeds import feed_read
+    from tools.filesystem import (
+        filesystem_copy,
+        filesystem_delete,
+        filesystem_diff,
+        filesystem_list,
+        filesystem_move,
+        filesystem_read,
+        filesystem_tree,
+        filesystem_write,
+    )
+    from tools.git_tools import (
+        git_add,
+        git_blame,
+        git_branch,
+        git_cherry_pick,
+        git_commit,
+        git_create_branch,
+        git_diff,
+        git_fetch,
+        git_log,
+        git_merge,
+        git_pull,
+        git_push,
+        git_rebase,
+        git_reset,
+        git_restore,
+        git_revert,
+        git_show,
+        git_stash,
+        git_status,
+        git_tag,
+        git_worktree,
+    )
+    from tools.mail_digest import mail_digest
+    from tools.memory_tools import memory_forget, memory_remember, memory_retrieve, memory_stats
+    from tools.notify import send_notification
+    from tools.page_watch import page_watch
+    from tools.patch import patch_delete, patch_insert, patch_replace
+    from tools.pdf_tools import (
+        pdf_extract_tables,
+        pdf_extract_text,
+        pdf_merge,
+        pdf_split,
+    )
+    from tools.quick_compute import calc_safe, convert_base, convert_unit, gen_password
+    from tools.reading_list import reading_list
+    from tools.remote_sync import remote_status, remote_transfer
+    from tools.routines import routine_add, routine_list, routine_remove, routine_run
+    from tools.runtime_tools import (
+        runtime_errors,
+        runtime_events,
+        runtime_latency,
+        runtime_models,
+        runtime_status,
+    )
+    from tools.search import code_search, file_find
+    from tools.secret_ref import secret_ref, secret_status
+    from tools.security import (
+        security_check_permissions,
+        security_scan_code,
+        security_scan_secrets,
+    )
+    from tools.session_tools import session_undo
+    from tools.shell import shell_execute
+    from tools.skills_tools import skills_list, skills_load
+    from tools.snippets import snippet_handler
+    from tools.system_monitor import system_status
+    from tools.task_pulse import task_alert, task_ping
+    from tools.test_tools import test_benchmark, test_coverage, test_discover, test_failed, test_run, test_run_target
+    from tools.watch_rules import watch_rule, watch_run
+    from tools.weather_get import weather_get
+    from tools.web_search import web_search
+    from tools.world_monitor import (
+        world_monitor_get_alerts,
+        world_monitor_get_event,
+        world_monitor_get_region,
+        world_monitor_get_sources,
+        world_monitor_search,
+        world_monitor_world_brief,
+    )
+
+    registry = ToolRegistry()
+    registry.register_many([classify_tool(t) for t in [
+        # -- document & data tools (repo-mine: pypdf/pdfplumber/markitdown) --
+        Tool(
+            name="pdf.extract_text",
+            description=(
+                "Extract text from a PDF file (all pages or a 1-based page "
+                "range like '2-4' or '1,3,5'). Use for reading PDFs the agent "
+                " downloaded or that the user references."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "PDF file path (relative to project root)."},
+                    "pages": {"type": "string", "description": "Optional 1-based range, e.g. '2-4' or '1,3'."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=pdf_extract_text,
+            category="documents",
+        ),
+        Tool(
+            name="pdf.extract_tables",
+            description=(
+                "Extract tables from a PDF as markdown rows (pdfplumber). "
+                "Best for invoices, reports and financial documents."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "PDF file path."},
+                    "pages": {"type": "string", "description": "Optional 1-based range."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=pdf_extract_tables,
+            category="documents",
+        ),
+        Tool(
+            name="pdf.split",
+            description=(
+                "Split a PDF into chunks of N pages, written under the "
+                "project root. Default 1 page per file."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "PDF file path."},
+                    "every": {"type": "integer", "description": "Pages per output file. Default 1."},
+                    "dest": {"type": "string", "description": "Output directory (inside project root)."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.write",
+            handler=pdf_split,
+            category="documents",
+        ),
+        Tool(
+            name="pdf.merge",
+            description="Merge two or more PDFs into one file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "PDF paths in merge order (2+).",
+                    },
+                    "dest": {"type": "string", "description": "Output path (default merged.pdf at root)."},
+                },
+                "required": ["paths"],
+            },
+            permission="filesystem.write",
+            handler=pdf_merge,
+            category="documents",
+        ),
+        Tool(
+            name="docs.to_markdown",
+            description=(
+                "Convert a document to Markdown and save it as <name>.md. "
+                "Supports .docx, .html, .pdf, .ipynb, .xlsx, .csv, .json, "
+                ".txt. Use before quoting long documents in research."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Document path (relative to project root)."},
+                    "dest": {"type": "string", "description": "Optional output .md path."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.write",
+            handler=doc_to_markdown,
+            category="documents",
+        ),
+        # -- data tools (repo-mine: miller, qsv, jq) --
+        Tool(
+            name="data.stats",
+            description=(
+                "Profile a CSV/TSV/JSON/JSONL file: row/column counts, per-column "
+                "types, nulls, uniques, numeric ranges and strongest correlation. "
+                "Use before analyzing any tabular data."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Data file path (relative to project root)."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=data_stats,
+            category="data",
+        ),
+        Tool(
+            name="data.query",
+            description=(
+                "Filter rows of a CSV/TSV/JSON/JSONL file with a pandas query "
+                "expression (e.g. \"revenue > 1000 and region == 'EMEA'\") and "
+                "show matching rows. Use to slice datasets without dumping them "
+                "into context."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Data file path."},
+                    "expr": {"type": "string", "description": "Pandas query expression."},
+                },
+                "required": ["path", "expr"],
+            },
+            permission="filesystem.read",
+            handler=data_query,
+            category="data",
+        ),
+        Tool(
+            name="data.convert",
+            description=(
+                "Convert data files between CSV, TSV, JSON and JSONL. Writes "
+                "inside the project root only."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Source data file."},
+                    "dest": {"type": "string", "description": "Output path with new extension."},
+                },
+                "required": ["path", "dest"],
+            },
+            permission="filesystem.write",
+            handler=data_convert,
+            category="data",
+        ),
+        # -- report generation (repo-mine: python-openxml/python-docx) --
+        Tool(
+            name="doc.report",
+            description=(
+                "Generate a formatted Word (.docx) report from a title and "
+                "sections. Each section is {'title', 'text'?, 'bullets'?}. "
+                "Use to deliver research results as a shareable document."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Report title."},
+                    "subtitle": {"type": "string", "description": "Optional subtitle line."},
+                    "author": {"type": "string", "description": "Optional author line."},
+                    "sections": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"},
+                                "text": {"type": "string"},
+                                "bullets": {
+                                    "type": "array", "items": {"type": "string"}
+                                },
+                            },
+                        },
+                        "description": "Ordered sections: title/text/bullets.",
+                    },
+                    "dest": {"type": "string", "description": "Output .docx path (default report.docx)."},
+                },
+                "required": ["title", "sections"],
+            },
+            permission="filesystem.write",
+            handler=doc_report,
+            category="documents",
+        ),
+        # -- routines (repo-mine: casey/just) --
+        Tool(
+            name="routine.add",
+            description=(
+                "Save a named routine (recipe of tool steps) for reuse, e.g. "
+                "standup-digest: web.search -> summary -> notify. Steps are "
+                "{'tool', 'args'} pairs. Routines persist across restarts."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Routine name."},
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "tool": {"type": "string"},
+                                "args": {"type": "object"},
+                            },
+                        },
+                        "description": "Ordered steps: {'tool', 'args'}.",
+                    },
+                },
+                "required": ["name", "steps"],
+            },
+            permission="system.status",
+            handler=routine_add,
+            category="system",
+        ),
+        Tool(
+            name="routine.list",
+            description="List saved routines with their steps and run counts.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="filesystem.read",
+            handler=routine_list,
+            category="system",
+        ),
+        Tool(
+            name="routine.remove",
+            description="Delete a saved routine by name.",
+            parameters={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            permission="system.status",
+            handler=routine_remove,
+            category="system",
+        ),
+        Tool(
+            name="routine.run",
+            description=(
+                "Resolve a saved routine into a validated step plan and execute "
+                "it step by step through the normal tool path. Use when the user "
+                "asks to run a saved routine by name."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            permission="system.status",
+            handler=routine_run,
+            category="system",
+        ),
+        # -- remote storage (repo-mine: rclone/rclone) --
+        Tool(
+            name="remote.status",
+            description=(
+                "Report rclone availability, version, and configured remote "
+                "names (never credentials). Use to check which cloud storage "
+                "providers (70+) are usable for transfers/backups."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="system.status",
+            handler=remote_status,
+            category="system",
+        ),
+        Tool(
+            name="remote.transfer",
+            description=(
+                "Copy, move, or sync files between local paths and cloud "
+                "remotes via rclone (e.g. 'gdrive:backups', 'D:/data'). "
+                "mode='sync' makes dest identical to source and DELETES "
+                "extraneous dest files — review with dry_run=true first, "
+                "then confirm=true."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "mode": {
+                        "type": "string", "enum": ["copy", "move", "sync"],
+                        "description": "Transfer type. Default 'copy'.",
+                    },
+                    "source": {"type": "string", "description": "Source path spec."},
+                    "dest": {"type": "string", "description": "Destination path spec."},
+                    "dry_run": {"type": "boolean", "description": "Show what would transfer without doing it."},
+                    "confirm": {"type": "boolean", "description": "Required true for destructive sync."},
+                },
+                "required": ["source", "dest"],
+            },
+            permission="filesystem.write",
+            handler=remote_transfer,
+            category="filesystem",
+        ),
+        # -- API collections (repo-mine: usebruno/bruno) --
+        Tool(
+            name="api.parse",
+            description=(
+                "Parse a .bru (Bruno) API request file and show the method, "
+                "URL, headers, query and body it defines. Use to inspect "
+                "collections before running them."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": ".bru file path."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=api_parse,
+            category="web",
+        ),
+        Tool(
+            name="api.run",
+            description=(
+                "Run a .bru (Bruno) request file or a whole collection folder: "
+                "executes the HTTP requests and reports status per request. "
+                "{{vars}} interpolate from 'vars' and UPPER_CASE env vars "
+                "(secret values never appear in output)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": ".bru file or collection folder."},
+                    "vars": {"type": "object", "description": "Optional {{name}} -> value substitutions."},
+                    "allow_private": {"type": "boolean", "description": "Allow loopback/private targets. Default false."},
+                    "timeout": {"type": "number", "description": "Per-request timeout seconds (cap 60)."},
+                },
+                "required": ["path"],
+            },
+            permission="web.search",
+            handler=api_run,
+            category="web",
+        ),
+        # -- watch & notify (repo-mine: changedetection.io, ntfy, gotify) --
+        Tool(
+            name="page.watch",
+            description=(
+                "Watch a URL for content changes. First call records a "
+                "baseline; later calls return a line-level diff when the "
+                "page changes ('CHANGED ...') or report 'unchanged'. Also "
+                "supports action='list' and action='remove'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "http(s) URL to watch."},
+                    "action": {
+                        "type": "string", "enum": ["check", "arm", "list", "remove"],
+                        "description": "Default 'check' (auto-arms on first call).",
+                    },
+                    "timeout": {"type": "number", "description": "Fetch timeout seconds. Default 15."},
+                },
+                "required": ["url"],
+            },
+            permission="web.search",
+            handler=page_watch,
+            category="web",
+        ),
+        # -- doc retrieval (repo-mine: AnythingLLM local-first RAG, TF-IDF slice) --
+        Tool(
+            name="doc.search",
+            description=(
+                "Search the workspace's OWN documents (.md/.txt/.pdf/.csv/.json/"
+                ".py/...) with TF-IDF — private, no upload, no model download. "
+                "Returns ranked files, chunks, scores, and snippets so answers "
+                "can quote real text. doc.search with action='stats' shows what "
+                "is indexed."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to look for."},
+                    "limit": {"type": "integer", "description": "Max hits (default 5, max 15)."},
+                    "action": {"type": "string", "enum": ["search", "stats"], "description": "Default 'search'."},
+                },
+                "required": ["query"],
+            },
+            permission="filesystem.read",
+            handler=doc_retrieval_handler,
+            category="system",
+        ),
+        # -- agenda (repo-mine: Leon/sukeesh scheduling gap; ICS standard) --
+        Tool(
+            name="agenda.view",
+            description=(
+                "Show upcoming events from iCalendar sources: local .ics files "
+                "in the workspace or subscribed .ics URLs. Supports simple "
+                "recurring events (daily/weekly/monthly). action='add' registers "
+                "a source; action='list'/'remove' manage them."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "View window, 1-60 days. Default 7."},
+                    "source": {"type": "string", "description": "For add/remove: an .ics URL or workspace path."},
+                    "action": {"type": "string", "enum": ["view", "add", "list", "remove"], "description": "Default 'view'."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=agenda_view_handler,
+            category="system",
+        ),
+        # -- feeds (repo-mine: miniflux/v2 — reader hygiene for agents) --
+        Tool(
+            name="feed.read",
+            description=(
+                "Fetch an RSS 2.0 / Atom 1.0 / JSON Feed URL and list its latest "
+                "items, newest first. Tracking parameters are stripped from item "
+                "URLs (utm_*, fbclid, ...) before they are reported. "
+                "unseen_only=true filters against the last marked check."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "http(s) feed URL."},
+                    "limit": {"type": "integer", "description": "Max items shown (default 10, max 50)."},
+                    "unseen_only": {"type": "boolean", "description": "Only items not seen in the last marked check."},
+                    "mark_seen": {"type": "boolean", "description": "Record all current item URLs as seen."},
+                    "timeout": {"type": "number", "description": "Fetch timeout seconds. Default 15."},
+                },
+                "required": ["url"],
+            },
+            permission="web.search",
+            handler=feed_read,
+            category="web",
+        ),
+        # -- reading list (repo-mine: wallabag — save for later, keep the text) --
+        Tool(
+            name="reading.list",
+            description=(
+                "Save an article URL for later WITH its extracted text stored "
+                "locally, so it can be read or searched even after the page "
+                "changes or disappears. action=save/list/read/remove; saved "
+                "text is automatically visible to doc.search."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Article URL (save/read/remove)."},
+                    "action": {"type": "string", "enum": ["save", "list", "read", "remove"], "description": "Default 'list'."},
+                    "timeout": {"type": "number", "description": "Fetch timeout seconds. Default 15."},
+                },
+                "required": [],
+            },
+            permission="web.search",
+            handler=reading_list,
+            category="web",
+        ),
+        # -- web archive (repo-mine: ArchiveBox — snapshots that survive page drift) --
+        Tool(
+            name="web.archive",
+            description=(
+                "Snapshot a page's readable text into a local, content-hash-"
+                "deduplicated archive: a new snapshot is stored only when the "
+                "page actually changed. action=archive/list/read; read takes an "
+                "index (-1 = newest) to diff history. Archived text is visible "
+                "to doc.search."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "http(s) page URL."},
+                    "action": {"type": "string", "enum": ["archive", "list", "read"], "description": "Default 'archive'."},
+                    "index": {"type": "integer", "description": "For read: snapshot index, -1 = newest."},
+                    "force": {"type": "boolean", "description": "Store a snapshot even if content is unchanged."},
+                    "timeout": {"type": "number", "description": "Fetch timeout seconds. Default 20."},
+                },
+                "required": ["url"],
+            },
+            permission="web.search",
+            handler=web_archive_handler,
+            category="web",
+        ),
+        # -- weather (repo-mine: wttr.in lineage via open-meteo — key-free) --
+        Tool(
+            name="weather.get",
+            description=(
+                "Current conditions and a short daily forecast for a place — "
+                "no API key, no sign-up. Open-meteo geocoding + forecast with "
+                "plain-language weather codes."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "location": {"type": "string", "description": "Place name, e.g. 'Berlin'."},
+                    "days": {"type": "integer", "description": "Forecast days 1-7 (default 3)."},
+                    "lat": {"type": "number", "description": "Alternative to location: latitude."},
+                    "lon": {"type": "number", "description": "Alternative to location: longitude."},
+                    "label": {"type": "string", "description": "Display label when using lat/lon."},
+                },
+                "required": [],
+            },
+            permission="web.search",
+            handler=weather_get,
+            category="web",
+        ),
+        # -- mail digest (repo-mine: notmuch/neomutt headers-only school) --
+        Tool(
+            name="mail.digest",
+            description=(
+                "Summarize unread mail HEADERS over read-only IMAP: count by "
+                "sender domain, newest subjects. Bodies are never fetched and "
+                "nothing is marked read. Disabled unless JARVIS_IMAP_HOST, "
+                "JARVIS_IMAP_USER and JARVIS_IMAP_PASSWORD (app password) are "
+                "set in the environment."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "description": "Look-back window, 1-14 (default 2)."},
+                    "limit": {"type": "integer", "description": "Max subjects listed (default 10)."},
+                },
+                "required": [],
+            },
+            permission="system.query",
+            handler=mail_digest,
+            category="system",
+        ),
+        # -- snippets (repo-mine: federico-terzi/espanso text expansion) --
+        Tool(
+            name="snippet.store",
+            description=(
+                "Espanso-style text expansion: manage :trigger → text snippets "
+                "with action=add/list/remove/expand. browser.type expands "
+                ":triggers in typed text automatically before entering it."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "list", "remove", "expand"], "description": "Default 'list'."},
+                    "trigger": {"type": "string", "description": "Snippet name without the colon, e.g. 'sig'."},
+                    "text": {"type": "string", "description": "Expansion text (add) or text to expand (expand)."},
+                },
+                "required": [],
+            },
+            permission="memory.remember",
+            handler=snippet_handler,
+            category="memory",
+        ),
+        Tool(
+            name="notify.send",
+            description=(
+                "Send a push notification (ntfy.sh topic or self-hosted "
+                "Gotify) when a long task finishes or fails. Requires "
+                "JARVIS_NTFY_URL or JARVIS_GOTIFY_URL+JARVIS_GOTIFY_TOKEN."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Notification body."},
+                    "title": {"type": "string", "description": "Title. Default 'JARVIS'."},
+                    "priority": {
+                        "type": "string", "enum": ["min", "low", "default", "high", "urgent"],
+                        "description": "Urgency. Default 'default'.",
+                    },
+                    "tags": {"type": "string", "description": "Comma-separated emoji/keyword tags."},
+                },
+                "required": ["message"],
+            },
+            permission="web.search",
+            handler=send_notification,
+            category="system",
+        ),
+        Tool(
+            name="browser.wait",
+            description=(
+                "Wait for a condition on the active browser page instead of "
+                "blind sleeps: condition='selector' (CSS appears), 'text' "
+                "(substring visible), 'gone' (selector removed), or 'delay'. "
+                "Use after clicks and SPA navigations before reading."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "condition": {
+                        "type": "string", "enum": ["selector", "text", "gone", "delay"],
+                        "description": "What to wait for.",
+                    },
+                    "value": {"type": "string", "description": "CSS selector, text substring, or seconds for delay."},
+                    "timeout": {"type": "number", "description": "Max seconds to wait. Default 10, cap 30."},
+                },
+                "required": ["condition"],
+            },
+            permission="browser.read",
+            handler=browser_wait,
+            category="browser",
+        ),
+        # -- task pulse (repo-mine: healthchecks.io dead-man's switch) --
+        Tool(
+            name="task.ping",
+            description=(
+                "Record a successful check-in for a named recurring task "
+                "(healthchecks-style). Call at the END of every run of a "
+                "cron/scheduled job. expect_minutes sets the silence "
+                "threshold for task.alert."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Task name, e.g. 'nightly-backup'."},
+                    "expect_minutes": {
+                        "type": "number",
+                        "description": "Alert when silent longer than this. Default 60.",
+                    },
+                },
+                "required": ["name"],
+            },
+            permission="system.status",
+            handler=task_ping,
+            category="system",
+        ),
+        Tool(
+            name="task.alert",
+            description=(
+                "Sweep all pinged tasks and report (optionally push via ntfy/ "
+                "Gotify) any that stopped checking in. Run it periodically or "
+                "when the user asks whether background jobs are healthy."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "notify": {
+                        "type": "boolean",
+                        "description": "Push an alert (once per silence episode). Default true.",
+                    },
+                },
+                "required": [],
+            },
+            permission="system.status",
+            handler=task_alert,
+            category="system",
+        ),
+        # -- watch rules (repo-mine: huginn agents x changedetection.io) --
+        Tool(
+            name="watch.rule",
+            description=(
+                "Bind a watched URL to an action: when the page is 'changed'/ "
+                "'unchanged'/seen at all ('any'), then 'notify' (push) or "
+                "'agent_note' (record for the next turn). Rules persist."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "http(s) URL to watch."},
+                    "trigger": {
+                        "type": "string", "enum": ["changed", "unchanged", "any"],
+                        "description": "Condition. Default 'changed'.",
+                    },
+                    "then": {
+                        "type": "string", "enum": ["notify", "agent_note"],
+                        "description": "Action when triggered. Default 'notify'.",
+                    },
+                    "message": {"type": "string", "description": "Optional note sent with the action."},
+                    "action": {
+                        "type": "string", "enum": ["add", "list", "remove"],
+                        "description": "Default 'add'.",
+                    },
+                    "rule_id": {"type": "string", "description": "For action='remove'."},
+                },
+                "required": [],
+            },
+            permission="web.search",
+            handler=watch_rule,
+            category="web",
+        ),
+        Tool(
+            name="watch.run",
+            description=(
+                "Evaluate every watch rule now: re-check each watched URL and "
+                "fire the bound action when its condition matches. Returns a "
+                "FIRED/ERRORS summary."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="web.search",
+            handler=watch_run,
+            category="web",
+        ),
+        # -- topic watch (repo-mine: FatihMakes/Mark-LIV background_monitor) --
+        Tool(
+            name="topic.watch",
+            description=(
+                "Watch a TOPIC (concept, not a URL) via news headlines: add/list/"
+                "remove topics or run today's check. Alerts only when the top "
+                "headline changes; at most one check per topic per day. Refuses "
+                "crypto/financial topics by policy."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string", "enum": ["add", "list", "remove", "check"],
+                        "description": "Default 'check' when omitted.",
+                    },
+                    "topic": {"type": "string", "description": "Topic phrase for add/remove."},
+                },
+                "required": [],
+            },
+            permission="web.search",
+            handler=topic_watch_handler,
+            category="web",
+        ),
+        # -- secret refs (repo-mine: Infisical-style indirection) --
+        Tool(
+            name="secret.ref",
+            description=(
+                "Resolve or register a credential REFERENCE (env var) without "
+                "ever reading the value into context. action='register' indexes "
+                "an existing env var; default action resolves NAME to a scoped "
+                "handle with the value masked."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "UPPER_SNAKE_CASE env var name, e.g. GROQ_API_KEY."},
+                    "action": {
+                        "type": "string", "enum": ["resolve", "register", "forget"],
+                        "description": "Default 'resolve'.",
+                    },
+                },
+                "required": [],
+            },
+            permission="system.status",
+            handler=secret_ref,
+            category="system",
+        ),
+        Tool(
+            name="secret.status",
+            description=(
+                "List registered secret references with masked fingerprints "
+                "(never values) so the user can audit what the agent can use."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="system.status",
+            handler=secret_status,
+            category="system",
+        ),
+        Tool(
+            name="filesystem.write",
+            description=(
+                "Create or overwrite a file on disk with the given content. "
+                "Paths are resolved relative to the project root."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative or absolute file path."},
+                    "content": {"type": "string", "description": "Full file content to write."},
+                    "overwrite": {"type": "boolean", "description": "Allow overwriting existing file. Default true."},
+                },
+                "required": ["path", "content"],
+            },
+            permission="filesystem.write",
+            handler=filesystem_write,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.read",
+            description="Read a file and return its contents. Paths resolve relative to the project root.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative or absolute file path."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=filesystem_read,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.list",
+            description="List entries in a directory.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory path. Defaults to project root."},
+                    "detail": {"type": "boolean", "description": "Include sizes/dates. Default false."},
+                },
+                "required": [],
+            },
+            permission="filesystem.list",
+            handler=filesystem_list,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.delete",
+            description="Delete a file or empty directory. Cannot delete non-empty directories.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or empty directory to delete."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.write",
+            handler=filesystem_delete,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.copy",
+            description="Copy a file to a new location (preserves metadata).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Source file path."},
+                    "dest": {"type": "string", "description": "Destination path."},
+                },
+                "required": ["source", "dest"],
+            },
+            permission="filesystem.write",
+            handler=filesystem_copy,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.move",
+            description="Move or rename a file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "Source file path."},
+                    "dest": {"type": "string", "description": "Destination path."},
+                },
+                "required": ["source", "dest"],
+            },
+            permission="filesystem.write",
+            handler=filesystem_move,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.diff",
+            description="Compare two files line-by-line and show differences.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_a": {"type": "string", "description": "First file path."},
+                    "file_b": {"type": "string", "description": "Second file path."},
+                },
+                "required": ["file_a", "file_b"],
+            },
+            permission="filesystem.read",
+            handler=filesystem_diff,
+            category="filesystem",
+        ),
+        Tool(
+            name="filesystem.tree",
+            description="Show directory tree structure.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory path. Default project root."},
+                    "max_depth": {"type": "integer", "description": "Max recursion depth. Default 3."},
+                    "max_entries": {"type": "integer", "description": "Max entries to show. Default 200."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=filesystem_tree,
+            category="filesystem",
+        ),
+        Tool(
+            name="shell.execute",
+            description=(
+                "Execute a command on the host system and return its stdout/stderr. "
+                "Prefer structured form: 'executable' + 'args' (runs without a shell). "
+                "For shell scripts use 'command' with optional 'shell' (powershell|cmd); "
+                "chaining operators and dangerous commands are rejected. "
+                "Use for anything the filesystem tools cannot do. Output is truncated; "
+                "long-running commands may time out."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "executable": {"type": "string", "description": "Executable path or name. Preferred over command."},
+                    "args": {
+                        "oneOf": [
+                            {"type": "array", "items": {"type": "string"}},
+                            {"type": "string"},
+                        ],
+                        "description": "Argument list (structured, no shell). May be a list or a stringified list.",
+                    },
+                    "command": {"type": "string", "description": "A shell command string. Chaining blocked."},
+                    "shell": {"type": "string", "enum": ["powershell", "cmd"], "description": "Shell host."},
+                    "cwd": {"type": "string", "description": "Working directory. Defaults to project root."},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds. Default 60, max 300."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=shell_execute,
+            category="system",
+        ),
+        # -- quick compute (repo-mine: sukeesh/Jarvis conversions + generators) --
+        Tool(
+            name="calc.safe",
+            description=(
+                "Evaluate an arithmetic expression exactly and instantly — "
+                "whitelisted AST only (numbers, + - * / // % **, parentheses, "
+                "sqrt/abs/round/min/max/floor/ceil/log/sin/cos/tan, pi/e/tau). "
+                "Never eval(); no shell, no network."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string", "description": "e.g. (2+3)*7 or sqrt(144)"},
+                },
+                "required": ["expression"],
+            },
+            permission="system.query",
+            handler=calc_safe,
+            category="system",
+        ),
+        Tool(
+            name="convert.unit",
+            description=(
+                "Convert a value between units: length, mass, temperature, data, "
+                "speed, time, volume, area. Category is auto-detected when the "
+                "units are unambiguous (e.g. km to mi, GB to MiB, C to F)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "value": {"type": "number", "description": "Numeric value to convert."},
+                    "from": {"type": "string", "description": "Source unit, e.g. km"},
+                    "to": {"type": "string", "description": "Target unit, e.g. mi"},
+                    "category": {
+                        "type": "string",
+                        "enum": list(sorted(["length", "mass", "temperature", "data", "speed", "time", "volume", "area"])),
+                        "description": "Optional; auto-detected when omitted.",
+                    },
+                },
+                "required": ["value", "from", "to"],
+            },
+            permission="system.query",
+            handler=convert_unit,
+            category="system",
+        ),
+        Tool(
+            name="convert.base",
+            description=(
+                "Convert an integer between bases (2-36). With to_base, returns "
+                "the single conversion; without it, shows binary/octal/decimal/hex "
+                "side by side."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "value": {"type": "string", "description": "The numeral, e.g. FF or 1010"},
+                    "from_base": {"type": "integer", "description": "Default 10."},
+                    "to_base": {"type": "integer", "description": "Optional target base 2-36."},
+                },
+                "required": ["value"],
+            },
+            permission="system.query",
+            handler=convert_base,
+            category="system",
+        ),
+        Tool(
+            name="gen.password",
+            description=(
+                "Generate a strong random password using the secrets module. "
+                "Never stored, never logged; reports its entropy estimate."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "length": {"type": "integer", "description": "8-128, default 20."},
+                    "lower": {"type": "boolean", "description": "Include lowercase (default true)."},
+                    "upper": {"type": "boolean", "description": "Include uppercase (default true)."},
+                    "digits": {"type": "boolean", "description": "Include digits (default true)."},
+                    "symbols": {"type": "boolean", "description": "Include symbols (default true)."},
+                    "exclude_ambiguous": {"type": "boolean", "description": "Skip O/0/l/1 lookalikes (default true)."},
+                },
+                "required": [],
+            },
+            permission="system.query",
+            handler=gen_password,
+            category="system",
+        ),
+        Tool(
+            name="system.status",
+            description=(
+                "Report read-only host health: CPU load, RAM usage, uptime, "
+                "process count, and (when available) CPU temperature and GPU "
+                "load. Use for system monitoring questions."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+            permission="system.query",
+            handler=system_status,
+            category="system",
+        ),
+        Tool(
+            name="web.search",
+            description=(
+                "Search the web for a query and return ranked results (title, "
+                "snippet, URL). Set mode='news' for recent news coverage. "
+                "Uses Google ground-truth search when GEMINI_API_KEY is set, "
+                "otherwise DuckDuckGo. Use for current-events research and "
+                "fact lookup."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query."},
+                    "mode": {
+                        "type": "string", "enum": ["search", "news"],
+                        "description": "Search type. Default 'search'.",
+                    },
+                    "limit": {"type": "integer", "description": "Max results. Default 6."},
+                },
+                "required": ["query"],
+            },
+            permission="web.search",
+            handler=web_search,
+            category="web",
+        ),
+        Tool(
+            name="world_monitor.search",
+            description=(
+                "Search real-time global intelligence (news and events) for a query. "
+                "Returns matching articles/events from World Monitor's aggregated "
+                "sources. Use for current-events research: 'what is happening with X'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Free-text search query."},
+                    "category": {"type": "string", "description": "Category filter (geopolitics, finance...)."},
+                    "limit": {"type": "integer", "description": "Max results to return. Default 10."},
+                },
+                "required": ["query"],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_search,
+            category="world",
+        ),
+        Tool(
+            name="browser.open",
+            description=(
+                "Open a URL and return the page title, visible text, and links. "
+                "Uses a full Playwright browser when available (handles JavaScript "
+                "heavy pages) and falls back to HTTP scraping otherwise. Use for "
+                "web research and reading pages."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Full URL (http(s)://) or bare domain."},
+                },
+                "required": ["url"],
+            },
+            permission="browser.open",
+            handler=browser_open,
+            category="browser",
+        ),
+        Tool(
+            name="browser.screenshot",
+            description=(
+                "Take a screenshot of the current browser page and save it to disk. "
+                "Returns the file path. Requires Playwright + chromium."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Optional output path (defaults to temp dir)."},
+                },
+                "required": [],
+            },
+            permission="browser.screenshot",
+            handler=browser_screenshot,
+            category="browser",
+        ),
+        Tool(
+            name="browser.click",
+            description=(
+                "Click the first element matching a CSS selector on the current page. "
+                "Requires Playwright. Useful after browser.open for interactive pages."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector."},
+                },
+                "required": ["selector"],
+            },
+            permission="browser.high",
+            handler=browser_click,
+            category="browser",
+        ),
+        Tool(
+            name="browser.type",
+            description=(
+                "Fill a text input matching a CSS selector on the current page. "
+                "Requires Playwright."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "CSS selector of the input."},
+                    "text": {"type": "string", "description": "Text to type."},
+                },
+                "required": ["selector", "text"],
+            },
+            permission="browser.high",
+            handler=browser_type,
+            category="browser",
+        ),
+        Tool(
+            name="browser.extract",
+            description=(
+                "Extract visible text from the current page, or a specific element "
+                "by CSS selector. Requires Playwright."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "selector": {"type": "string", "description": "Optional CSS selector."},
+                },
+                "required": [],
+            },
+            permission="browser.read",
+            handler=browser_extract,
+            category="browser",
+        ),
+        Tool(
+            name="browser.status",
+            description=(
+                "Report whether the full Playwright browser backend is available "
+                "or JARVIS is falling back to HTTP scraping."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+            permission="browser.read",
+            handler=browser_status,
+            category="browser",
+        ),
+        Tool(
+            name="browser.new_tab",
+            description=(
+                "Open a new browser tab (optionally at a URL) and return its stable "
+                "tab_id. Use for multi-tab research; tabs keep their own state."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Optional URL to open in the new tab."},
+                },
+                "required": [],
+            },
+            permission="browser.low",
+            handler=browser_new_tab,
+            category="browser",
+        ),
+        Tool(
+            name="browser.close_tab",
+            description=("Close a browser tab by its tab_id."),
+            parameters={
+                "type": "object",
+                "properties": {"tab_id": {"type": "string", "description": "Stable tab id from browser.tabs/new_tab."}},
+                "required": ["tab_id"],
+            },
+            permission="browser.low",
+            handler=browser_close_tab,
+            category="browser",
+        ),
+        Tool(
+            name="browser.tabs",
+            description=(
+                "List all open browser tabs (id, session, title, url). Use to see "
+                "what research state exists before operating on a specific tab."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="browser.low",
+            handler=browser_tabs,
+            category="browser",
+        ),
+        Tool(
+            name="browser.switch_tab",
+            description=("Make a specific tab the active target for subsequent browser tools."),
+            parameters={
+                "type": "object",
+                "properties": {"tab_id": {"type": "string", "description": "Stable tab id."}},
+                "required": ["tab_id"],
+            },
+            permission="browser.low",
+            handler=browser_switch_tab,
+            category="browser",
+        ),
+        Tool(
+            name="browser.read",
+            description=(
+                "Read the current (or named) page as a structured context: URL, title, "
+                "interactive element handles [elN], links, forms, and visible text. "
+                "Prefer this over browser.extract for agent reasoning; use the [elN] "
+                "handles with browser.click/type."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"tab_id": {"type": "string", "description": "Optional tab id."}},
+                "required": [],
+            },
+            permission="browser.low",
+            handler=browser_read,
+            category="browser",
+        ),
+        Tool(
+            name="browser.find",
+            description=("Find occurrences of a query in the page text of a tab."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Text to search for."},
+                    "tab_id": {"type": "string", "description": "Optional tab id."},
+                },
+                "required": ["query"],
+            },
+            permission="browser.low",
+            handler=browser_find,
+            category="browser",
+        ),
+        Tool(
+            name="browser.scroll",
+            description=("Scroll a page: direction one of up/down/top/bottom."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "direction": {"type": "string", "enum": ["up", "down", "top", "bottom"]},
+                    "amount": {"type": "integer", "description": "Pixels for up/down."},
+                    "tab_id": {"type": "string"},
+                },
+                "required": ["direction"],
+            },
+            permission="browser.low",
+            handler=browser_scroll,
+            category="browser",
+        ),
+        Tool(
+            name="browser.profile",
+            description=(
+                "Report the active browser session: persistent profile dir (cookies/"
+                "storage kept on disk so logged-in sessions survive restarts)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"session_id": {"type": "string"}},
+                "required": [],
+            },
+            permission="browser.low",
+            handler=browser_profile,
+            category="browser",
+        ),
+        Tool(
+            name="browser.permissions",
+            description=(
+                "Show which browser actions are low (auto), medium, or high risk "
+                "(high requires explicit approval before execution)."
+            ),
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="browser.low",
+            handler=browser_permissions,
+            category="browser",
+        ),
+        Tool(
+            name="world_monitor.get_alerts",
+            description=(
+                "Return live situational alerts: conflicts, crises, and natural "
+                "disasters. Use for 'what is happening in <region> right now' and "
+                "disruption awareness (aviation, shipping, infrastructure incidents)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "region": {"type": "string", "description": "Region or country to scope alerts to."},
+                    "severity": {"type": "string", "description": "Minimum severity filter."},
+                    "limit": {"type": "integer", "description": "Max alerts to return. Default 10."},
+                },
+                "required": [],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_get_alerts,
+            category="world",
+        ),
+        Tool(
+            name="world_monitor.get_region",
+            description=(
+                "Return a situational brief and risk snapshot for a country or "
+                "region (political, conflict, economic, infrastructure signals)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "country": {"type": "string", "description": "Country name or ISO code."},
+                    "region": {"type": "string", "description": "Broader region name (fallback if country is empty)."},
+                    "limit": {"type": "integer", "description": "Max signals to return. Default 10."},
+                },
+                "required": ["country"],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_get_region,
+            category="world",
+        ),
+        Tool(
+            name="world_monitor.get_event",
+            description=(
+                "Return detail for one specific World Monitor event id (as returned "
+                "by world_monitor.search or world_monitor.get_alerts)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "event_id": {"type": "string", "description": "The event id to look up."},
+                    "event_type": {"type": "string", "description": "Event type (conflict, disaster, cyber...)."},
+                },
+                "required": ["event_id"],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_get_event,
+            category="world",
+        ),
+        Tool(
+            name="world_monitor.get_sources",
+            description=(
+                "List the data sources and coverage World Monitor exposes "
+                "(conflict, aviation, shipping, markets, weather, etc.). Use to "
+                "discover what categories are available before querying."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Optional category to filter sources by."},
+                    "limit": {"type": "integer", "description": "Max sources to return. Default 20."},
+                },
+                "required": [],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_get_sources,
+            category="world",
+        ),
+        Tool(
+            name="world_monitor.world_brief",
+            description=(
+                "Return a global snapshot of what is happening in the world right "
+                "now: major events across conflicts, disasters, markets, and "
+                "infrastructure. Use for open-ended 'what is happening globally'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "region": {"type": "string", "description": "Optional region focus."},
+                    "limit": {"type": "integer", "description": "Max items to return. Default 15."},
+                },
+                "required": [],
+            },
+            permission="world_monitor.read",
+            handler=world_monitor_world_brief,
+            category="world",
+        ),
+        # ── Search ──────────────────────────────────────────────
+        Tool(
+            name="search.code",
+            description=(
+                "Search file contents using regex across the repository. "
+                "Returns file:line matches. Use for finding code, references, "
+                "definitions, and patterns."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Regex pattern to search for."},
+                    "path": {"type": "string", "description": "Subdirectory to restrict search."},
+                    "include": {"type": "string", "description": "File glob filter (e.g. *.py)."},
+                    "max_results": {"type": "integer", "description": "Cap on results. Default 200."},
+                },
+                "required": ["pattern"],
+            },
+            permission="filesystem.read",
+            handler=code_search,
+            category="search",
+        ),
+        Tool(
+            name="search.find",
+            description="Find files by name pattern (glob) across the repository.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string", "description": "Glob pattern (e.g. *.py, **/test_*.py)."},
+                    "path": {"type": "string", "description": "Subdirectory to search in."},
+                },
+                "required": ["pattern"],
+            },
+            permission="filesystem.read",
+            handler=file_find,
+            category="search",
+        ),
+        # ── Git ─────────────────────────────────────────────────
+        Tool(
+            name="git.status",
+            description="Show the working tree status (short format).",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="filesystem.read",
+            handler=git_status,
+            category="git",
+        ),
+        Tool(
+            name="git.diff",
+            description="Show changes in the working tree or staged changes.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "staged": {"type": "boolean", "description": "Show staged changes. Default false."},
+                    "path": {"type": "string", "description": "Restrict to a specific file."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=git_diff,
+            category="git",
+        ),
+        Tool(
+            name="git.log",
+            description="Show recent commit history.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "count": {"type": "integer", "description": "Number of commits. Default 10."},
+                    "path": {"type": "string", "description": "Restrict to a specific file."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=git_log,
+            category="git",
+        ),
+        Tool(
+            name="git.branch",
+            description="Show the current branch name.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="filesystem.read",
+            handler=git_branch,
+            category="git",
+        ),
+        Tool(
+            name="git.add",
+            description="Stage files for commit.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or directory to stage. Use . for all."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.write",
+            handler=git_add,
+            category="git",
+        ),
+        Tool(
+            name="git.commit",
+            description="Create a commit with staged changes.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string", "description": "Commit message."},
+                },
+                "required": ["message"],
+            },
+            permission="filesystem.write",
+            handler=git_commit,
+            category="git",
+        ),
+        Tool(
+            name="git.restore",
+            description="Discard changes in working tree for a file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File to restore. Use . for all."},
+                    "staged": {"type": "boolean", "description": "Also unstage. Default false."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.write",
+            handler=git_restore,
+            category="git",
+        ),
+        # ── Patch editing ───────────────────────────────────────
+        Tool(
+            name="patch.replace",
+            description=(
+                "Replace exact text in a file. The old text must match uniquely "
+                "(or use all=true for multiple). Preferred over full-file overwrite."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File to edit."},
+                    "old": {"type": "string", "description": "Exact text to find."},
+                    "new": {"type": "string", "description": "Replacement text."},
+                    "all": {"type": "boolean", "description": "Replace all occurrences. Default false."},
+                },
+                "required": ["path", "old", "new"],
+            },
+            permission="filesystem.write",
+            handler=patch_replace,
+            category="patch",
+        ),
+        Tool(
+            name="patch.insert",
+            description="Insert text at a specific line number in a file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File to edit."},
+                    "line": {
+                        "type": "integer",
+                        "description": "Line number to insert before (1-indexed). 0 = append at end.",
+                    },
+                    "text": {"type": "string", "description": "Text to insert."},
+                },
+                "required": ["path", "line", "text"],
+            },
+            permission="filesystem.write",
+            handler=patch_insert,
+            category="patch",
+        ),
+        Tool(
+            name="patch.delete",
+            description="Delete a range of lines from a file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File to edit."},
+                    "start": {"type": "integer", "description": "First line to delete (1-indexed, inclusive)."},
+                    "end": {"type": "integer", "description": "Last line to delete (inclusive). Defaults to start."},
+                },
+                "required": ["path", "start"],
+            },
+            permission="filesystem.write",
+            handler=patch_delete,
+            category="patch",
+        ),
+        # ── Memory tools ─────────────────────────────────────────────
+        Tool(
+            name="memory.retrieve",
+            description=(
+                "Search across all memory backends (KV, vector, decisions, project knowledge) "
+                "and return the most relevant results. Use this to look up previously stored "
+                "information, decisions, preferences, or facts."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Semantic search query."},
+                    "limit": {"type": "integer", "description": "Max results (default 5, max 10)."},
+                    "project": {"type": "string", "description": "Filter to a specific project."},
+                },
+                "required": ["query"],
+            },
+            permission="memory.retrieve",
+            handler=memory_retrieve,
+            category="memory",
+        ),
+        Tool(
+            name="memory.remember",
+            description=(
+                "Store a new memory with a key, value, and category. "
+                "Categories: identity, preferences, priorities, notes, projects, decisions. "
+                "Use this to remember user information, preferences, or important facts."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Memory key (e.g., 'user_name', 'coding_style')."},
+                    "value": {"type": "string", "description": "Memory value."},
+                    "category": {
+                        "type": "string",
+                        "description": "Category: identity, preferences, priorities, notes, projects, decisions.",
+                        "enum": ["identity", "preferences", "priorities", "notes", "projects", "decisions"],
+                    },
+                },
+                "required": ["key", "value"],
+            },
+            permission="memory.remember",
+            handler=memory_remember,
+            category="memory",
+        ),
+        Tool(
+            name="memory.forget",
+            description="Delete a memory by key.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string", "description": "Key of the memory to delete."},
+                },
+                "required": ["key"],
+            },
+            permission="memory.forget",
+            handler=memory_forget,
+            category="memory",
+        ),
+        Tool(
+            name="memory.stats",
+            description="Show memory system statistics (counts, categories).",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="memory.stats",
+            handler=memory_stats,
+            category="memory",
+        ),
+        # ── Git (extended) ──────────────────────────────────────
+        Tool(
+            name="git.blame",
+            description="Show who last modified each line of a file (git blame).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File to blame."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=git_blame,
+            category="git",
+        ),
+        Tool(
+            name="git.create_branch",
+            description="Create a new branch and optionally check it out.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Branch name."},
+                    "checkout": {"type": "boolean", "description": "Switch to new branch. Default true."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.write",
+            handler=git_create_branch,
+            category="git",
+        ),
+        Tool(
+            name="git.stash",
+            description="Stash uncommitted changes (save/pop/list/drop).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "save, pop, list, or drop. Default save."},
+                    "message": {"type": "string", "description": "Stash message (save only)."},
+                },
+                "required": [],
+            },
+            permission="filesystem.write",
+            handler=git_stash,
+            category="git",
+        ),
+        Tool(
+            name="git.show",
+            description="Show a specific commit (hash, branch, or HEAD).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "Commit ref. Default HEAD."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=git_show,
+            category="git",
+        ),
+        Tool(
+            name="git.merge",
+            description="Merge a branch into the current branch.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "branch": {"type": "string", "description": "Branch to merge."},
+                },
+                "required": ["branch"],
+            },
+            permission="filesystem.write",
+            handler=git_merge,
+            category="git",
+        ),
+        Tool(
+            name="git.rebase",
+            description="Rebase current branch onto another branch.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "onto": {"type": "string", "description": "Branch to rebase onto."},
+                },
+                "required": ["onto"],
+            },
+            permission="filesystem.write",
+            handler=git_rebase,
+            category="git",
+        ),
+        Tool(
+            name="git.tag",
+            description="Create or list git tags.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "create or list. Default create."},
+                    "name": {"type": "string", "description": "Tag name (for create)."},
+                    "message": {"type": "string", "description": "Tag message (for create)."},
+                },
+                "required": [],
+            },
+            permission="filesystem.write",
+            handler=git_tag,
+            category="git",
+        ),
+        Tool(
+            name="git.fetch",
+            description="Fetch from a remote repository.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "remote": {"type": "string", "description": "Remote name. Default origin."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=git_fetch,
+            category="git",
+        ),
+        Tool(
+            name="git.pull",
+            description="Pull changes from a remote repository.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "remote": {"type": "string", "description": "Remote name."},
+                    "branch": {"type": "string", "description": "Branch name."},
+                },
+                "required": [],
+            },
+            permission="filesystem.write",
+            handler=git_pull,
+            category="git",
+        ),
+        Tool(
+            name="git.push",
+            description="Push commits to a remote repository.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "remote": {"type": "string", "description": "Remote name."},
+                    "branch": {"type": "string", "description": "Branch name."},
+                },
+                "required": [],
+            },
+            permission="filesystem.write",
+            handler=git_push,
+            category="git",
+        ),
+        Tool(
+            name="git.revert",
+            description="Revert a commit by creating a new commit that undoes it.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "Commit ref to revert."},
+                },
+                "required": ["ref"],
+            },
+            permission="filesystem.write",
+            handler=git_revert,
+            category="git",
+        ),
+        Tool(
+            name="git.cherry_pick",
+            description="Cherry-pick a commit from another branch.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "Commit ref to cherry-pick."},
+                },
+                "required": ["ref"],
+            },
+            permission="filesystem.write",
+            handler=git_cherry_pick,
+            category="git",
+        ),
+        Tool(
+            name="git.reset",
+            description="Reset to a specific commit (soft/mixed/hard).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "ref": {"type": "string", "description": "Commit ref to reset to."},
+                    "mode": {"type": "string", "description": "soft, mixed, or hard. Default mixed."},
+                },
+                "required": ["ref"],
+            },
+            permission="filesystem.write",
+            handler=git_reset,
+            category="git",
+        ),
+        Tool(
+            name="git.worktree",
+            description="Manage git worktrees (add/list/remove).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "add, list, or remove."},
+                    "path": {"type": "string", "description": "Worktree path (for add/remove)."},
+                    "branch": {"type": "string", "description": "Branch name (for add)."},
+                },
+                "required": ["action"],
+            },
+            permission="filesystem.write",
+            handler=git_worktree,
+            category="git",
+        ),
+        # ── Code intelligence ───────────────────────────────────
+        Tool(
+            name="code.symbol",
+            description="Find symbol definitions (classes, functions, variables) by name.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name to search for."},
+                    "path": {"type": "string", "description": "Directory to search in."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.read",
+            handler=code_symbol,
+            category="code",
+        ),
+        Tool(
+            name="code.references",
+            description="Find all references/usages of a symbol across the codebase.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name."},
+                    "path": {"type": "string", "description": "Directory to search in."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.read",
+            handler=code_references,
+            category="code",
+        ),
+        Tool(
+            name="code.imports",
+            description="Show all imports in a Python file.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Python file to analyze."},
+                },
+                "required": ["path"],
+            },
+            permission="filesystem.read",
+            handler=code_imports,
+            category="code",
+        ),
+        Tool(
+            name="code.typecheck",
+            description="Run Python type checking (mypy or py_compile) on a file or directory.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "File or directory to check."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=code_typecheck,
+            category="code",
+        ),
+        Tool(
+            name="code.definition",
+            description="Find where a symbol is defined (class, function, variable).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Symbol name."},
+                    "path": {"type": "string", "description": "Directory to search."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.read",
+            handler=code_definition,
+            category="code",
+        ),
+        Tool(
+            name="code.callers",
+            description="Find all call sites of a function or method.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Function/method name."},
+                    "path": {"type": "string", "description": "Directory to search."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.read",
+            handler=code_callers,
+            category="code",
+        ),
+        Tool(
+            name="code.callees",
+            description="Find what functions a given function calls (call graph).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Python file."},
+                    "function_name": {"type": "string", "description": "Function to analyze."},
+                },
+                "required": ["file_path", "function_name"],
+            },
+            permission="filesystem.read",
+            handler=code_callees,
+            category="code",
+        ),
+        Tool(
+            name="code.ast",
+            description="Parse a Python file and show its AST structure (classes, functions, imports).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Python file to analyze."},
+                },
+                "required": ["file_path"],
+            },
+            permission="filesystem.read",
+            handler=code_ast,
+            category="code",
+        ),
+        # ── Test tools ──────────────────────────────────────────
+        Tool(
+            name="test.discover",
+            description="Discover test files and count tests in the project.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory to search."},
+                    "pattern": {"type": "string", "description": "File glob pattern. Default test_*.py."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=test_discover,
+            category="testing",
+        ),
+        Tool(
+            name="test.run_target",
+            description="Run specific test files or test functions with pytest.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Test file, directory, or specific test."},
+                    "args": {"type": "string", "description": "Extra pytest args. Default '-v --tb=short'."},
+                    "timeout": {"type": "integer", "description": "Timeout in seconds. Default 120."},
+                },
+                "required": ["target"],
+            },
+            permission="shell.execute",
+            handler=test_run_target,
+            category="testing",
+        ),
+        Tool(
+            name="test.failed",
+            description="Show only failed tests from a test run.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Test file or directory."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=test_failed,
+            category="testing",
+        ),
+        Tool(
+            name="test.coverage",
+            description="Run tests with coverage reporting.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Test file or directory."},
+                    "source": {"type": "string", "description": "Source directory to measure."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=test_coverage,
+            category="testing",
+        ),
+        Tool(
+            name="test.run",
+            description="Run the full test suite with optional filtering.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Test path. Default project root."},
+                    "markers": {"type": "string", "description": "Pytest marker expression."},
+                    "verbose": {"type": "boolean", "description": "Verbose output. Default false."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=test_run,
+            category="testing",
+        ),
+        Tool(
+            name="test.benchmark",
+            description="Run test benchmarks or show slowest tests.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Test path. Default project root."},
+                },
+                "required": [],
+            },
+            permission="shell.execute",
+            handler=test_benchmark,
+            category="testing",
+        ),
+        # ── Runtime diagnostics ─────────────────────────────────
+        Tool(
+            name="runtime.status",
+            description="Report JARVIS runtime health: providers, memory, tools, Ollama.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="system.query",
+            handler=runtime_status,
+            category="runtime",
+        ),
+        # ── Skills (advertise-then-load) ────────────────────────
+        Tool(
+            name="skills.load",
+            description=(
+                "Load a named skill's full instructions into context "
+                "(progressive disclosure). Call when a task matches a listed "
+                "skill and you need its detailed workflow."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Skill name, e.g. 'code_review'."},
+                },
+                "required": ["name"],
+            },
+            permission="filesystem.read",
+            handler=skills_load,
+            category="skills",
+        ),
+        Tool(
+            name="skills.list",
+            description="List all registered JARVIS skills with descriptions, tags, and risk.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="filesystem.read",
+            handler=skills_list,
+            category="skills",
+        ),
+        # ── Session state (undo) ─────────────────────────────────
+        Tool(
+            name="session.undo",
+            description=(
+                "Undo the most recent reversible action you took this session "
+                "(filesystem writes, patch edits). Call with list=true to show "
+                "what can be undone without doing it."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "list": {"type": "boolean", "description": "List undoable actions without undoing. Default false."},
+                },
+                "required": [],
+            },
+            permission="filesystem.write",
+            handler=session_undo,
+            category="session",
+        ),
+        Tool(
+            name="runtime.latency",
+            description="Show model/provider latency metrics and performance data.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="system.query",
+            handler=runtime_latency,
+            category="runtime",
+        ),
+        Tool(
+            name="runtime.errors",
+            description="Show recent errors from the agent runtime.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Max errors to show. Default 20."},
+                },
+                "required": [],
+            },
+            permission="system.query",
+            handler=runtime_errors,
+            category="runtime",
+        ),
+        Tool(
+            name="runtime.events",
+            description="Show recent runtime events (BusEvents).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "Max events. Default 20."},
+                },
+                "required": [],
+            },
+            permission="system.query",
+            handler=runtime_events,
+            category="runtime",
+        ),
+        Tool(
+            name="runtime.models",
+            description="Show loaded Ollama models and residency state.",
+            parameters={"type": "object", "properties": {}, "required": []},
+            permission="system.query",
+            handler=runtime_models,
+            category="runtime",
+        ),
+        # ── Security ────────────────────────────────────────────
+        Tool(
+            name="security.scan_secrets",
+            description="Scan the project for hardcoded secrets and sensitive data.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory to scan."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=security_scan_secrets,
+            category="security",
+        ),
+        Tool(
+            name="security.check_permissions",
+            description="Check file permissions and sensitive file exposure.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory to check."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=security_check_permissions,
+            category="security",
+        ),
+        Tool(
+            name="security.scan_code",
+            description="Scan Python files for security issues (eval, exec, shell=True, pickle, etc.).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Directory to scan. Default project root."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=security_scan_code,
+            category="security",
+        ),
+
+        # ── Self-audit ──────────────────────────────────────────────
+        Tool(
+            name="self.audit",
+            description="Run read-only JARVIS self-audit checks (security scan + dependency basics). Optionally audit a test path with pytest when 'path' is provided.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Optional test path/pattern to include a pytest run."},
+                },
+                "required": [],
+            },
+            permission="filesystem.read",
+            handler=lambda args: tool_result(
+                True,
+                str(run_audit(str(args.get("path", ".")))),
+                error="",
+                audit="full",
+            ),
+            category="audit",
+        ),
+    ]])
+    return registry
+
+
+__all__ = [
+    "Tool",
+    "ToolRegistry",
+    "ToolResult",
+    "tool_result",
+    "build_default_registry",
+]
+
+
+def topic_watch_handler(args: dict) -> ToolResult:
+    """Dispatch topic.watch actions to the Mark-LIV-derived watcher."""
+    action = (args.get("action") or "check").strip().lower()
+    from tools import topic_watch as _tw
+
+    if action == "add":
+        return _tw.add_topic(args)
+    if action == "remove":
+        return _tw.remove_topic(args)
+    if action == "list":
+        return _tw.list_topics(args)
+    return _tw.check_topics(args)
+
+
+def doc_retrieval_handler(args: dict) -> ToolResult:
+    """Dispatch doc.search actions to the AnythingLLM-derived retriever."""
+    action = (args.get("action") or "search").strip().lower()
+    if action == "stats":
+        return doc_stats(args)
+    return doc_search(args)
+
+
+def agenda_view_handler(args: dict) -> ToolResult:
+    """Dispatch agenda.view actions to the ICS calendar reader."""
+    action = (args.get("action") or "view").strip().lower()
+    if action == "add":
+        return agenda_add(args)
+    if action == "remove":
+        return agenda_remove(args)
+    if action == "list":
+        return agenda_list(args)
+    return _agenda_view_mod.agenda_view(args)
+
+
+def web_archive_handler(args: dict) -> ToolResult:
+    """Dispatch web.archive actions to the ArchiveBox-derived snapshotter."""
+    action = (args.get("action") or "archive").strip().lower()
+    if action == "list":
+        return web_archive_list(args)
+    if action == "read":
+        return web_archive_read(args)
+    return _web_archive_mod.web_archive(args)

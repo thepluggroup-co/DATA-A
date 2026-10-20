@@ -56,7 +56,7 @@ a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--turquoise); outline-offset: 2px; border-radius: 6px; }
 
 /* ---------------------------------------------------------------- coquille ERP */
-.coquille { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
+.coquille { display: grid; grid-template-columns: 264px minmax(0, 1fr); min-height: 100vh; }
 .laterale {
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 1rem;
   padding: 1.1rem 0.75rem; background: linear-gradient(180deg, rgba(7, 20, 49, 0.98), rgba(4, 10, 24, 0.98));
@@ -103,7 +103,7 @@ a:hover { text-decoration: underline; }
 .horloge { font-variant-numeric: tabular-nums; color: var(--texte-2); font-size: 0.85rem; }
 .chip-role { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.25rem 0.6rem; border-radius: 999px;
   border: 1px solid var(--bord-fort); color: var(--turquoise); background: rgba(21, 234, 224, 0.06); }
-main { padding: 1.6rem 1.75rem 3rem; max-width: 1320px; width: 100%; }
+main { padding: 1.6rem 2rem 3rem; max-width: 1440px; width: 100%; box-sizing: border-box; }
 
 /* ---------------------------------------------------------------- titres et panneaux */
 h1 { font-size: 1.65rem; margin: 0 0 0.3rem; letter-spacing: -0.01em; font-weight: 700; }
@@ -126,6 +126,9 @@ h2::before { content: ""; width: 6px; height: 16px; border-radius: 3px; backgrou
 .theme-clair .laterale nav svg, .theme-clair .module-icone, .theme-clair .module-icone svg, .theme-clair .kpi .etiquette svg, .theme-clair .parametres-nav svg { color: #123d78; }
 .theme-clair .module-icone { background: rgba(22, 88, 195, 0.08); border-color: rgba(18, 61, 120, 0.3); }
 .theme-clair .laterale nav a.active { color: #10213d; box-shadow: inset 3px 0 0 #123d78; }
+.theme-clair .sous-onglets { background: #fff; }
+.theme-clair .sous-onglets a { color: #315276; }
+.theme-clair .sous-onglets a.active { color: #123d78; border-bottom-color: #123d78; }
 body.theme-clair { background: #f4f8fc; background-image: radial-gradient(900px 600px at 85% -10%, rgba(21,171,220,0.11), transparent 60%), linear-gradient(rgba(22,88,195,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(22,88,195,0.035) 1px, transparent 1px); color: #10213d; }
 .panneau:hover, .carte:hover { border-color: rgba(21, 234, 224, 0.3); box-shadow: var(--ombre), 0 22px 55px rgba(0, 0, 0, 0.26); }
 .grille-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.1rem; }

@@ -1,0 +1,1226 @@
+"""AgentLoop — the tool-calling agent runtime for JARVIS MK-X.
+
+Owns the observe → decide → act cycle: sends the message history with the
+tool catalog to the router, executes requested tool calls through the
+permission engine + executor, and closes the task with a final answer.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field, replace
+from typing import Any
+
+from core import events
+from core.agent.context import AgentContextBuilder
+from core.agent.intent import Intent, IntentClassifier
+from core.agent.latency_router import LatencyAwareRouter
+from core.agent.model_residency import ModelResidencyScheduler
+from core.agent.observer import TaskObserver
+from core.agent.partial_stt import PartialSTTRouter
+from core.agent.perf_tracker import PerfTracker
+from core.agent.permissions import PermissionEngine
+from core.agent.quality_evaluator import QualityEvaluator
+from core.agent.speculative import SpeculativeExecutor
+from core.agent.state import AgentState, TaskStatus, classify_failure, pick_worst_failure
+from core.agent.tool_verifier import ToolResultVerifier
+from core.agent.tools import AgentToolExecutor, generate_tool_call_id
+from core.context.budget import estimate_tokens
+from core.context.manager import ContextManager
+from core.decision_logger import DecisionLogger, get_decision_logger
+from core.project import ProjectContext
+from providers.router import ProviderRouter
+from providers.types import LLMResponse, ProviderError, ToolCall
+from runtime.observability.tracer import get_tracer
+from tools.registry import ToolRegistry
+
+
+@dataclass
+class AgentResult:
+    """Outcome of a single agent run."""
+
+    success: bool
+    response: str
+    trace_id: str
+    state: AgentState
+    error: str = ""
+    observation: dict[str, Any] = field(default_factory=dict)
+    perf: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "response": self.response,
+            "trace_id": self.trace_id,
+            "error": self.error,
+            "state": self.state.to_dict(),
+            "observation": self.observation,
+            "perf": self.perf,
+        }
+
+
+class AgentLoop:
+    """Executes a goal end-to-end using the tool-calling provider chain."""
+
+    # Matches <tool.name>{json}</function> (closing tag optional/mismatched,
+    # as weak models emit) — full-match only so prose is never misread.
+    _TEXT_TOOL_CALL_RE = re.compile(
+        r"\s*<\s*([a-zA-Z0-9_.-]+)\s*>\s*(\{.*?\})\s*<\s*/\s*[a-zA-Z0-9_.-]*\s*>\s*",
+        re.DOTALL,
+    )
+
+    @staticmethod
+    def _strip_thinking(text: str) -> str:
+        """Strip <think>...</think>...</think><think> tags from model output."""
+        import re
+        return re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+    @classmethod
+    def _parse_text_tool_call(cls, text: str, registry: ToolRegistry):
+        """Recover a tool call from plain text when the provider refused
+        structured calls. Returns a ToolCall or None."""
+        if not text:
+            return None
+        match = cls._TEXT_TOOL_CALL_RE.fullmatch(text)
+        if not match:
+            return None
+        raw_name, raw_args = match.group(1), match.group(2)
+        name = raw_name
+        if registry.get(name) is None and "_" in name:
+            dotted = name.replace("_", ".")
+            if registry.get(dotted) is not None:
+                name = dotted
+        if registry.get(name) is None:
+            return None
+        try:
+            # LLMs often emit Unicode curly quotes; JSON needs ASCII ones.
+            normalized = raw_args.replace("\u201c", '"').replace("\u201d", '"')
+            args = json.loads(normalized)
+        except Exception:
+            return None
+        if not isinstance(args, dict):
+            return None
+        from providers.types import ToolCall
+        return ToolCall(name=name, arguments=args, id="")
+
+    def __init__(
+        self,
+        router: ProviderRouter,
+        registry: ToolRegistry,
+        project: ProjectContext | None = None,
+        decision_logger: DecisionLogger | None = None,
+        mode: str = "agent",
+        max_iterations: int = 10,
+        max_tokens: int | None = None,
+        temperature: float = 0.4,
+        max_tool_calls_per_step: int = 6,
+        confirmation_handler: Callable[[str, dict[str, Any]], str] | None = None,
+        observer: TaskObserver | None = None,
+        context_manager: ContextManager | None = None,
+        mem=None,
+        event_bus=None,
+        harness=None,
+        model_gateway=None,
+        tool_service=None,
+        browser_recovery=None,
+    ) -> None:
+
+        self.router = router
+        self.registry = registry
+        self.project = project or ProjectContext.discover()
+        self.logger = decision_logger or get_decision_logger()
+        self.context_builder = AgentContextBuilder(registry)
+        self.intent_classifier = IntentClassifier(registry)
+        self._speculative = SpeculativeExecutor(self.intent_classifier)
+        self._partial_stt = PartialSTTRouter(self.intent_classifier)
+        self._latency_router = LatencyAwareRouter()
+        self._residency = ModelResidencyScheduler()
+        self._quality_eval = QualityEvaluator()
+        self._perf_tracker = PerfTracker()
+        self._tool_verifier = ToolResultVerifier()
+        self.observer = observer or TaskObserver()
+        self.context_manager = context_manager or ContextManager()
+        self.mem = mem
+        self._bus = event_bus
+        self._model_gateway = model_gateway
+        self.max_tokens = max_tokens
+
+        # Harness integration: harness overrides scalar config when present
+        self._harness = harness
+        self._browser_recovery = browser_recovery
+        if harness is not None:
+            hc = harness.config
+            self.max_iterations = hc.max_iterations
+            self.temperature = hc.temperature
+            self.max_tool_calls_per_step = hc.max_tool_calls_per_step
+            self._verification_enabled = hc.enable_verification
+            self._planning_enabled = hc.enable_planning
+            self._max_verification_retries = getattr(hc, "max_verification_retries", 3)
+            self._self_critique_enabled = getattr(hc, "enable_self_critique", True)
+            self._self_critique_strict = getattr(hc, "self_critique_strict", False)
+        else:
+            self.max_iterations = max_iterations
+            self.temperature = temperature
+            self.max_tool_calls_per_step = max_tool_calls_per_step
+            # Bounds check: prevent runaway tool loops
+            if self.max_tool_calls_per_step < 1:
+                self.max_tool_calls_per_step = 1
+            elif self.max_tool_calls_per_step > 10:
+                self.max_tool_calls_per_step = 10
+            self._verification_enabled = True
+            self._planning_enabled = True
+            self._self_critique_enabled = True
+            self._self_critique_strict = False
+
+        self._tool_counter = 0
+        self._preferred_model: str | None = None  # request-scoped model override
+        self._session_id: str = ""  # current session identity stamped on BusEvents
+
+        # Single tool execution boundary -- permissions and executor live
+        # inside ToolExecutionService; nothing outside may access them.
+        if tool_service is not None:
+            self._tool_service = tool_service
+        else:
+            from core.agent.tool_service import ToolExecutionService
+            _permissions = PermissionEngine(
+                self.logger, mode=mode, confirmation_handler=confirmation_handler,
+            )
+            _executor = AgentToolExecutor(registry, self.logger)
+            self._tool_service = ToolExecutionService(
+                registry=registry,
+                permissions=_permissions,
+                executor=_executor,
+                observer=self.observer,
+                decision_logger=self.logger,
+                bus=event_bus,
+                mode=mode,
+            )
+
+        # Wire the per-tool verifier to the shared tool service so filesystem
+        # write / patch verification actually runs, and honor the harness gate.
+        self._tool_verifier._tool_service = self._tool_service
+        self._tool_verifier._enabled = self._verification_enabled
+
+    # ── Mode management (delegates to ToolExecutionService) ────────────────
+
+    @property
+    def mode(self) -> str:
+        """Current execution mode."""
+        return self._tool_service.mode
+
+    def set_mode(self, mode: str) -> bool:
+        """Switch execution mode (agent, plan, smart, controlled)."""
+        return self._tool_service.set_mode(mode)
+
+    def _next_tool_id(self) -> str:
+        self._tool_counter += 1
+        return generate_tool_call_id(self._tool_counter)
+
+    def _emit(self, name: str, payload: dict[str, Any] | None = None,
+              trace_id: str = "") -> None:
+        """Publish a lifecycle event on the bus (if wired).  Never raises."""
+        if self._bus is None:
+            return
+        try:
+            from runtime.event_bus import BusEvent
+            self._bus.publish(BusEvent(
+                name=name,
+                payload=payload or {},
+                source="agent_loop",
+                trace_id=trace_id,
+                session_id=self._session_id,
+            ))
+        except Exception:
+            pass  # Best-effort: bus publish failure must not crash the agent
+
+    async def run(
+        self,
+        goal: str,
+        session_id: str = "",
+        on_chunk: Callable[[str], Awaitable[None]] | None = None,
+    ) -> AgentResult:
+        tracer = get_tracer()
+        root = tracer.begin(f"run: {goal[:80]}", {"goal": goal[:200]})
+        try:
+            if session_id:
+                self._session_id = session_id
+            trace_id = self.logger.begin_task(goal, source="agent_loop")
+            self.logger.record(trace_id, events.AGENT_REASONING_STARTED, {"goal": goal[:200]})
+            self.observer.start(trace_id, goal)
+            self._emit("task.started", {"goal": goal[:200], "session_id": session_id}, trace_id)
+            state = AgentState(task_id=trace_id, goal=goal)
+            # Conversation messages for the model. Seed from any pre-loaded
+            # history in state.messages, otherwise start with the user goal.
+            messages = list(state.messages)
+            if not messages:
+                messages = [{"role": "user", "content": goal}]
+            # Reset token usage tracking for new session
+            self._token_usage = {"system": 0, "memory": 0, "files": 0, "messages": 0, "response": 0}
+            self._last_budget_check = time.time()
+
+            # Pipeline latency tracker
+            _latency_log: list[tuple[str, float]] = []
+            # Token usage tracking per section
+            _token_usage: dict[str, int] = {
+                "system": 0,
+                "memory": 0,
+                "files": 0,
+                "messages": 0,
+                "response": 0,
+            }
+            _last_budget_check = time.time()
+
+            # ── Stage 1: Intent classification ──
+            _t0 = time.time()
+            classified = self.intent_classifier.classify(goal)
+            _latency_log.append(("intent", (time.time() - _t0) * 1000))
+            self.logger.record(trace_id, "intent.classified", {
+                "goal": goal[:200],
+                "intent": classified.intent.value,
+                "confidence": classified.confidence,
+                "tool": classified.tool_name,
+                "latency_ms": _latency_log[-1][1],
+            })
+
+            # INSTANT: response-only (greetings, questions) — return immediately
+            if classified.intent == Intent.INSTANT and classified.response and not classified.tool_name:
+                final = classified.response
+                self._emit("task.completed", {
+                    "goal": goal[:200], "iterations": 0,
+                    "tokens": 0, "provider": "direct", "response": final,
+                }, trace_id)
+                self._finish_observation(True, final, state, 0)
+                return AgentResult(
+                    success=True, response=final, trace_id=trace_id, state=state,
+                    observation=self._result_observation(state),
+                    perf=self._end_perf(tracer, root),
+                )
+
+            # INSTANT: tool dispatch — execute through ToolExecutionService (single boundary)
+            if classified.intent == Intent.INSTANT and classified.tool_name:
+                _instant_call = ToolCall(
+                    name=classified.tool_name,
+                    arguments=classified.tool_args or {},
+                    id=self._next_tool_id(),
+                )
+                tool_result = await self._tool_service.execute_tool(
+                    _instant_call,
+                    trace_id=trace_id,
+                    append_to_messages=messages,
+                    state=state,
+                )
+                final = tool_result.output if tool_result.success else f"Tool error: {tool_result.error}"
+                self._emit("task.completed", {
+                    "goal": goal[:200], "iterations": 0,
+                    "tokens": 0, "provider": "direct",
+                    "tool": classified.tool_name, "response": final[:500],
+                }, trace_id)
+                self._finish_observation(True, final, state, 0)
+                return AgentResult(
+                    success=tool_result.success, response=final, trace_id=trace_id, state=state,
+                    error="" if tool_result.success else tool_result.error,
+                    observation=self._result_observation(state),
+                    perf=self._end_perf(tracer, root),
+                )
+
+            # SIMPLE / COMPLEX: continue to LLM pipeline
+            # SIMPLE uses minimal context; COMPLEX uses full context+memory
+
+            # Model Gateway: select model based on harness requirements
+            # with confidence-based cascade fallback
+            if self._model_gateway is not None:
+                _t_ms = time.time()
+                requirements = set()
+                if self._harness is not None:
+                    for pref in self._harness.config.model_preference:
+                        from providers.model_gateway import Capability
+                        try:
+                            requirements.add(Capability(pref))
+                        except ValueError:
+                            pass
+                # Try primary model selection with confidence
+                profile = self._model_gateway.select(
+                    requirements=requirements or None,
+                    session_id=session_id or None,
+                    confidence=classified.confidence,
+                )
+
+                # Confidence-based cascade: if confidence is low or profile is None,
+                # fall back to less expensive models
+                if profile is None or classified.confidence < 0.5:
+                    # Try secondary models with lower precision but faster speed
+                    secondary_requirements = requirements.copy()
+                    # Add secondary model preferences
+                    if self._harness is not None:
+                        for pref in list(self._harness.config.model_preference)[1:3]:
+                            from providers.model_gateway import Capability
+                            try:
+                                secondary_requirements.add(Capability(pref))
+                            except ValueError:
+                                pass
+                    profile = self._model_gateway.select(
+                        requirements=secondary_requirements or None,
+                        session_id=session_id or None,
+                        confidence=max(classified.confidence, 0.3),  # minimum threshold
+                    )
+
+                # If still no profile, try the most lightweight model available
+                if profile is None:
+                    lightweight_requirements = set()
+                    if self._harness is not None:
+                        for pref in self._harness.config.model_preference[-2:]:
+                            from providers.model_gateway import Capability
+                            try:
+                                lightweight_requirements.add(Capability(pref))
+                            except ValueError:
+                                pass
+                    profile = self._model_gateway.select(
+                        requirements=lightweight_requirements or None,
+                        session_id=session_id or None,
+                        confidence=0.2,  # absolute minimum
+                    )
+                _latency_log.append(("model_select", (time.time() - _t_ms) * 1000))
+                if profile is not None:
+                    state.provider = profile.provider
+                    state.model = profile.name
+                    # Route the gateway's selection to the provider as the
+                    # request-scoped model so the actual inference call honours
+                    # it. The ModelGateway is the single model-selection
+                    # authority; nothing else should mutate _preferred_model.
+                    self._preferred_model = profile.name
+                    self._emit("model.selected", {
+                        "provider": profile.provider,
+                        "model": profile.name,
+                    }, trace_id)
+
+            state.transition(TaskStatus.CLASSIFYING)
+            state.transition(TaskStatus.EXECUTING)
+
+            # Context levels: instant (just the goal), session (minimal), deep (full)
+            context_level = classified.context_level
+            _t_ctx = time.time()
+            with tracer.span("context.build", {
+                "project": str(self.project.root_path), "level": context_level,
+            }):
+                # Select tools FIRST, then build context with token-optimized prompt
+                _all_tools = self.registry.to_openai_tools()
+                if classified.intent in (Intent.SIMPLE, Intent.COMPLEX):
+                    tools = self.intent_classifier.select_tools(goal, _all_tools)
+                else:
+                    tools = _all_tools
+                # context_level controls prompt size: instant=~50 tokens, session=~150, deep=~500
+                messages, system_prompt = self.context_builder.build(
+                    goal, self.project, self.mem, tools=tools, context_level=context_level,
+                    model=state.model,
+                )
+            _latency_log.append(("context_build", (time.time() - _t_ctx) * 1000))
+            if not tools:
+                tools = self.registry.to_openai_tools()
+
+            # Adaptive context budgets: scale context window to task complexity
+            _context_budget_multiplier = {
+                "instant": 0.25,
+                "session": 0.5,
+                "deep": 1.0,
+            }
+            _ctx_mult = _context_budget_multiplier.get(context_level, 1.0)
+
+            # Harness: filter tools and append system prompt addendum
+            if self._harness is not None:
+                tools = self._harness.filter_tools(tools)
+                addendum = self._harness.build_system_prompt_addendum()
+                if addendum:
+                    system_prompt = (system_prompt or "") + addendum
+
+            _run_start = time.monotonic()
+            # Latency budgets (seconds) — configurable via harness or defaults
+            _budgets = {
+                "intent": 0.05,
+                "routing": 0.01,
+                "context": 0.10,
+                "llm_call": 15.0,
+                "tool": 0.50,
+                "total": 30.0,
+            }
+            if self._harness is not None:
+                hb = getattr(self._harness.config, "latency_budgets", None)
+                if hb:
+                    _budgets.update(hb)
+
+            # Model-aware iteration limits: smaller models get fewer iterations
+            _model_iterations = self.max_iterations
+            _current_model = state.model or ""
+            if any(s in _current_model for s in ("1.5b", "1b")):
+                _model_iterations = min(_model_iterations, 5)
+                _budgets["total"] = min(_budgets["total"], 20.0)
+            elif "3b" in _current_model:
+                _model_iterations = min(_model_iterations, 10)
+                _budgets["total"] = min(_budgets["total"], 45.0)
+            elif any(s in _current_model for s in ("4b", "7b")):
+                _budgets["total"] = min(_budgets["total"], 60.0)
+
+            # Adaptive tool timefalls: reduce max tool calls based on
+            # model size, iteration count, and overall confidence
+            _adaptive_tool_limit = self.max_tool_calls_per_step
+            if _current_model and any(s in _current_model for s in ("1.5b", "1b")):
+                # Small models: reduce tool calls significantly
+                _adaptive_tool_limit = max(1, self.max_tool_calls_per_step - 3)
+            elif any(s in _current_model for s in ("3b",)):
+                # Medium models: moderate reduction
+                _adaptive_tool_limit = max(2, self.max_tool_calls_per_step - 2)
+            # Large models keep the full limit
+
+            # Further reduce tool calls as iterations progress
+            # (diminishing returns, risk of low-confidence calls)
+            _progress_factor = (_model_iterations - state.iteration + 1) / _model_iterations
+            _adaptive_tool_limit = max(1, int(_adaptive_tool_limit * _progress_factor))
+
+            # Verification retry budget — incremented on each failed verification pass.
+            _verification_retries = 0
+
+            for iteration in range(1, _model_iterations + 1):
+                # Hard wall-time timeout — prevents infinite tool-call loops
+                elapsed = time.monotonic() - _run_start
+                if elapsed > _budgets["total"]:
+                    from core.agent.state import FailureClass
+                    error = f"timeout after {elapsed:.0f}s"
+                    state.errors.append(error)
+                    state.failure_class = pick_worst_failure(
+                        state.failure_class, FailureClass.TIMEOUT
+                    )
+                    self._emit("task.failed", {
+                        "goal": goal[:200],
+                        "error": error,
+                    }, trace_id)
+                    state.transition(TaskStatus.FAILED)
+                    final = self._extract_last_assistant_text(messages)
+                    self._finish_observation(False, final or "", state, iteration)
+                    return AgentResult(
+                        success=False, response=final, trace_id=trace_id,
+                        state=state, error=error,
+                        observation=self._result_observation(state),
+                        perf=self._end_perf(tracer, root),
+                    )
+                state.iteration = iteration
+                state.browser_down_this_iter = False
+                _t_compress = time.monotonic()
+                # Adaptive context budget: pre-compute token estimate, then temporarily swap, always restore
+                _estimated_tokens = self.context_manager.budget.messages * _ctx_mult
+                _request_budget = replace(self.context_manager.budget, messages=int(_estimated_tokens))  # noqa: E501
+                _orig_budget = self.context_manager.budget
+                self.context_manager.budget = _request_budget
+                try:
+                    with tracer.span("context.fit"):
+                        messages, report = self.context_manager.fit_for_loop(
+                            messages, self._system_tokens(system_prompt, tools),
+                        )
+                finally:
+                    self.context_manager.budget = _orig_budget
+                _latency_log.append(("context_compress", (time.monotonic() - _t_compress) * 1000))
+                # Track actual token usage from compressed context
+                if hasattr(self, '_last_memory_prompt') and self._last_memory_prompt is not None:
+                    self._token_usage["memory"] = estimate_tokens(self._last_memory_prompt)
+                if messages:
+                    self._token_usage["messages"] += estimate_tokens(messages)
+                state.context_usage = report.to_dict()
+                if report.compacted:
+                    self._emit("context.compacted", {
+                        "messages_tokens": report.messages_tokens,
+                        "budget": report.budget.messages,
+                    }, trace_id)
+                remaining = max(3.0, _budgets["total"] - (time.monotonic() - _run_start))
+                _call_timeout = min(_budgets["llm_call"], remaining)
+                _t_llm = time.monotonic()
+                with tracer.span("provider.complete") as span:
+                    try:
+                        response = await asyncio.wait_for(
+                            self._complete(messages, system_prompt, tools, on_chunk),
+                            timeout=_call_timeout,
+                        )
+                    except TimeoutError:
+                        from providers.types import LLMResponse
+                        response = LLMResponse(
+                            text='', model='', provider='timeout',
+                            latency_ms=_call_timeout * 1000,
+                            finish_reason='timeout',
+                        )
+                    if span is not None:
+                        span.set_attribute("provider", response.provider)
+                        span.set_attribute("model", response.model)
+                        span.set_attribute("latency_ms", response.latency_ms)
+                        span.set_attribute("tokens", response.tokens_used)
+                _latency_log.append(("llm_call", (time.monotonic() - _t_llm) * 1000))
+                self._latency_router.record(
+                    response.model, response.latency_ms,
+                    (time.monotonic() - _t_llm) * 1000, response.has_tool_calls or bool(response.text),
+                )
+                state.add_tokens(response.tokens_prompt, response.tokens_completion)
+                state.provider = response.provider
+                state.model = response.model
+
+                self._perf_tracker.record(
+                    response.model, response.latency_ms,
+                    (time.monotonic() - _t_llm) * 1000,
+                    bool(response.text) or response.has_tool_calls,
+                )
+
+                if not response.has_tool_calls:
+                    fallback_call = self._parse_text_tool_call(response.text, self.registry)
+                    if fallback_call is not None:
+                        response.tool_calls = [fallback_call]
+                    else:
+                        final = self._strip_thinking(response.text).strip()
+                        if not final:
+                            from core.agent.state import FailureClass
+                            if response.finish_reason == "timeout":
+                                error = f"LLM call timed out after {_call_timeout:.0f}s"
+                                fc = FailureClass.TIMEOUT
+                            else:
+                                error = "provider returned an empty response"
+                                if response.finish_reason and response.finish_reason != "stop":
+                                    error += f" (finish_reason={response.finish_reason})"
+                                fc = FailureClass.MODEL_FAILURE
+                            state.errors.append(error)
+                            state.failure_class = pick_worst_failure(state.failure_class, fc)
+                            self.logger.record(trace_id, events.TASK_FAILED, {
+                                "goal": goal[:200], "error": error,
+                            })
+                            self._emit("task.failed", {"goal": goal[:200], "error": error}, trace_id)
+                            state.transition(TaskStatus.FAILED)
+                            self._finish_observation(False, "", state, iteration)
+                            return AgentResult(
+                                success=False, response="", trace_id=trace_id, state=state,
+                                error=error, observation=self._result_observation(state),
+                                perf=self._end_perf(tracer, root),
+                            )
+
+                        # Quality escalation: evaluate cheap-model answers,
+                        # re-route to reasoning model if uncertain
+                        q_result = self._quality_eval.evaluate(final, goal)
+                        if (q_result.should_escalate
+                                and not getattr(state, "_quality_escalated", False)
+                                and iteration < _model_iterations):
+                            state._quality_escalated = True
+                            self._emit("quality.escalate", {
+                                "score": q_result.score,
+                                "model": response.model,
+                                "signals": q_result.signals,
+                            }, trace_id)
+                            messages.append({
+                                "role": "user",
+                                "content": (
+                                    "Your previous answer was uncertain or incomplete. "
+                                    "Please provide a more specific, confident, and "
+                                    "complete answer to the original question."
+                                ),
+                            })
+                            continue
+
+                        self.logger.record(trace_id, events.TASK_COMPLETED, {
+                            "goal": goal[:200],
+                            "iterations": iteration,
+                            "tokens": state.tokens_used,
+                            "provider": response.provider,
+                        })
+                        state.transition(TaskStatus.OBSERVING)
+                        state.transition(TaskStatus.VERIFYING)
+
+                        # Post-execution verification gate
+                        if self._verification_enabled:
+                            ver_report = await self._run_verification(
+                                trace_id, goal=goal, final_output=final, state=state,
+                            )
+                            if not ver_report.all_passed:
+                                _verification_retries += 1
+                                if _verification_retries > self._max_verification_retries:
+                                    self._emit("task.failed", {
+                                        "goal": goal[:200],
+                                        "error": (
+                                            f"verification failed after "
+                                            f"{self._max_verification_retries} recovery attempts"
+                                        ),
+                                    }, trace_id)
+                                    state.transition(TaskStatus.FAILED)
+                                    self._finish_observation(False, "", state, iteration)
+                                    return AgentResult(
+                                        success=False, response=final, trace_id=trace_id,
+                                        state=state, error="verification failed - max retries exceeded",
+                                        observation=self._result_observation(state),
+                                        perf=self._end_perf(tracer, root),
+                                    )
+                                self._emit("verification.failed", {
+                                    "steps_run": ver_report.steps_run,
+                                    "steps_passed": ver_report.steps_passed,
+                                    "failures": [
+                                        {"name": r.step_name, "error": r.error or r.stderr[:200]}
+                                        for r in ver_report.results if not r.passed
+                                    ],
+                                }, trace_id)
+                                failure_ctx = self._build_verification_failure_context(ver_report)
+                                state.errors.append(failure_ctx)
+                                from core.agent.state import TerminalReason
+                                if iteration < _model_iterations:
+                                    messages.append({
+                                        "role": "user",
+                                        "content": (
+                                            "Verification failed. The following checks did not pass:\n"
+                                            + failure_ctx
+                                            + "\nPlease fix the issues and try again."
+                                        ),
+                                    })
+                                    state.transition(TaskStatus.RECOVERING)
+                                    state.transition(TaskStatus.EXECUTING)
+                                    continue
+                                else:
+                                    state.terminal_reason = TerminalReason.VERIFICATION_FAIL
+                                    self._emit("task.failed", {
+                                        "goal": goal[:200],
+                                        "error": "verification failed and no retries remaining",
+                                    }, trace_id)
+                                    state.transition(TaskStatus.FAILED)
+                                    self._finish_observation(False, "", state, iteration)
+                                    return AgentResult(
+                                        success=False, response=final, trace_id=trace_id,
+                                        state=state, error="verification failed",
+                                        observation=self._result_observation(state),
+                                        perf=self._end_perf(tracer, root),
+                                    )
+                            self._emit("verification.passed", {
+                                "steps_run": ver_report.steps_run,
+                            }, trace_id)
+
+                        state.transition(TaskStatus.COMPLETED)
+                        _total_latency = (time.monotonic() - _run_start) * 1000
+                        self._emit("task.completed", {
+                            "goal": goal[:200], "iterations": iteration,
+                            "tokens": state.tokens_used, "provider": response.provider,
+                            "response": final[:500],
+                            "latency_profile": dict(_latency_log),
+                            "total_latency_ms": _total_latency,
+                        }, trace_id)
+                        self._finish_observation(True, final, state, iteration)
+                        return AgentResult(
+                            success=True, response=final, trace_id=trace_id, state=state,
+                            observation=self._result_observation(state),
+                            perf=self._end_perf(tracer, root),
+                        )
+
+                for call in response.tool_calls:
+                    if not call.id:
+                        call.id = self._next_tool_id()
+
+                _tool_call_limit = getattr(self, "_adaptive_tool_limit", self.max_tool_calls_per_step)
+                if len(response.tool_calls) > _tool_call_limit:
+                    self.logger.record(trace_id, events.TOOL_FAILED, {
+                        "error": f"{len(response.tool_calls)} tool calls truncated to {self.max_tool_calls_per_step}",
+                    })
+                    response.tool_calls = response.tool_calls[:self.max_tool_calls_per_step]
+
+                messages.append({
+                    "role": "assistant",
+                    "content": response.text or None,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {"name": call.name, "arguments": json.dumps(call.arguments, default=str)},
+                        }
+                        for call in response.tool_calls
+                    ],
+                })
+
+                _t_start = time.monotonic()
+                await self._execute_tool_batch(
+                    response.tool_calls, messages, state, trace_id, session_id,
+                )
+                _latency_log.append(("tool_batch", (time.monotonic() - _t_start) * 1000))
+                if getattr(state, "browser_unavailable", False):
+                    # Recovery exhausted inside the batch: WAITING_BROWSER -> FAILED
+                    # (already transitioned). Surface a deterministic, structured
+                    # failure instead of letting the next iteration run blind.
+                    error = state.errors[-1] if state.errors else "browser unavailable"
+                    from core.agent.state import FailureClass
+                    fc = state.failure_class or FailureClass.TOOL_FAILURE
+                    self.logger.record(trace_id, events.TASK_FAILED, {
+                        "goal": goal[:200], "error": error[:500],
+                    })
+                    self._emit("task.failed", {
+                        "goal": goal[:200], "error": error[:500],
+                        "failure_class": fc.value,
+                    }, trace_id)
+                    self._finish_observation(False, "", state, iteration)
+                    return AgentResult(
+                        success=False, response="", trace_id=trace_id, state=state,
+                        error=error, observation=self._result_observation(state),
+                        perf=self._end_perf(tracer, root),
+                    )
+                # Safety: if the LLM keeps making tool calls without ever producing
+                # a text response, inject a nudge after 5 consecutive tool-only iterations.
+                if iteration >= 5 and not any(
+                    m.get("role") == "assistant" and m.get("content")
+                    for m in messages
+                ):
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "You have been calling tools without producing a text response. "
+                            "Please stop calling tools and give your final answer now. "
+                            "Summarize what you found or did in 2-3 sentences."
+                        ),
+                    })
+
+                state.transition(TaskStatus.OBSERVING)
+                state.transition(TaskStatus.EXECUTING)
+        except asyncio.CancelledError:
+            # External cancellation (e.g. client disconnect, task abort). Classify
+            # deterministically as CANCELLED, mark state, then re-raise so the
+            # cancellation semantics are preserved for the caller.
+            from core.agent.state import FailureClass
+            from core.agent.state import TerminalReason as _TR
+            state.failure_class = pick_worst_failure(
+                state.failure_class, FailureClass.CANCELLED
+            )
+            state.terminal_reason = _TR.CANCELLED
+            state.errors.append("task cancelled while running")
+            self.logger.record(trace_id, events.TASK_FAILED, {
+                "goal": goal[:200], "error": "cancelled",
+            })
+            self._emit("task.failed", {
+                "goal": goal[:200], "error": "cancelled", "failure_class": "cancelled",
+            }, trace_id)
+            try:
+                state.transition(TaskStatus.CANCELLED)
+            except ValueError:
+                pass
+            self._finish_observation(False, "", state, state.iteration)
+            raise
+        except Exception as e:
+            error = str(e)[:500]
+            state.errors.append(error)
+            is_provider = isinstance(e, (ProviderError, RuntimeError)) and (
+                "provider" in error.lower() or "429" in error or "rate limit" in error.lower()
+                or "quota" in error.lower() or "overloaded" in error.lower()
+            )
+            fc = classify_failure(error, is_provider=is_provider)
+            state.failure_class = pick_worst_failure(state.failure_class, fc)
+            self.logger.record(trace_id, events.TASK_FAILED, {"goal": goal[:200], "error": error})
+            self._emit("task.failed", {"goal": goal[:200], "error": error, "failure_class": fc.value}, trace_id)
+            try:
+                state.transition(TaskStatus.FAILED)
+            except ValueError:
+                pass  # already in terminal state
+            self._finish_observation(False, "", state, state.iteration)
+            return AgentResult(
+                success=False, response="", trace_id=trace_id, state=state, error=error,
+                observation=self._result_observation(state),
+                perf=self._end_perf(tracer, root, "ERROR", error),
+            )
+        finally:
+            if not self.observer.is_finished:
+                self.observer.cancel()
+
+        self.logger.record(trace_id, events.TASK_FAILED, {
+            "goal": goal[:200], "error": "max iterations reached",
+        })
+        try:
+            state.transition(TaskStatus.FAILED)
+        except ValueError:
+            pass
+        self._finish_observation(False, "", state, state.iteration)
+        from core.agent.state import TerminalReason
+        state.terminal_reason = TerminalReason.MAX_ITERATIONS
+        return AgentResult(
+            success=False,
+            response="",
+            trace_id=trace_id,
+            state=state,
+            error=f"Max iterations ({_model_iterations}) reached without a final answer",
+            observation=self._result_observation(state),
+            perf=self._end_perf(tracer, root),
+        )
+
+    async def _complete(
+        self,
+        messages: list[dict],
+        system_prompt: str,
+        tools: list,
+        on_chunk: Callable[[str], Awaitable[None]] | None,
+    ) -> LLMResponse:
+        """Send a completion, streaming the answer back chunk-by-chunk.
+
+        When ``on_chunk`` is set the call goes through
+        :meth:`router.complete_stream_typed`: content is forwarded live (so
+        callers can render the first tokens of the final answer as they arrive)
+        while streamed tool calls are still captured, so multi-step tool loops
+        keep working. Without a callback it behaves exactly like the plain
+        :meth:`router.complete` call.
+        """
+        # Lazy 3B prewarm: on first real LLM call, start loading the worker
+        # model in background so it's ready by the time a tool-using task
+        # arrives. The 1.5B is already loaded from boot.
+        try:
+            for provider in getattr(self.router, '_providers', {}).values():
+                if hasattr(provider, 'ensure_worker_model'):
+                    provider.ensure_worker_model()
+        except Exception:
+            pass
+        kwargs = dict(
+            system_prompt=system_prompt,
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            tools=tools,
+            preferred_provider=getattr(self.router, "preferred_provider", None),
+            preferred_model=self._preferred_model,
+        )
+        if on_chunk is None:
+            return await self.router.complete(messages, **kwargs)
+
+        start = time.perf_counter()
+        text_parts: list[str] = []
+        tool_calls: list = []
+        async for chunk, calls in self.router.complete_stream_typed(messages, **kwargs):
+            if chunk:
+                text_parts.append(chunk)
+                try:
+                    await on_chunk(chunk)
+                except Exception:
+                    pass
+            if calls is not None:
+                tool_calls = calls
+        text = "".join(text_parts)
+        tokens_completion = max(1, len(text) // 4)
+        return LLMResponse(
+            text=text,
+            model=self.router._last_model or "",
+            provider=self.router._last_provider or "",
+            tokens_used=tokens_completion,
+            tokens_prompt=estimate_tokens(json.dumps(messages, default=str)) + estimate_tokens(system_prompt or ""),
+            tokens_completion=tokens_completion,
+            latency_ms=round((time.perf_counter() - start) * 1000, 1),
+            finish_reason="stop",
+            tool_calls=tool_calls,
+        )
+
+    @staticmethod
+    def _extract_last_assistant_text(messages: list[dict]) -> str:
+        """Extract the last assistant message text from the conversation.
+
+        Used as fallback when the agent times out or fails before producing
+        a final answer — gives the LLM's partial response to the user.
+        """
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant" and msg.get("content"):
+                return msg["content"]
+        return ""
+
+    @staticmethod
+    def _end_perf(tracer, root, status: str = "OK", error: str = "") -> dict[str, Any]:
+        trace = tracer.end(root, status=status, error=error)
+        return trace or {}
+
+    async def _run_verification(self, trace_id: str, goal: str = "",
+                                final_output: str = "", state=None):
+        from core.agent.verification import VerificationEngine, VerificationStep
+        engine = VerificationEngine(project_root=str(self.project.root_path))
+        if self._harness is not None and self._harness.config.verification_steps:
+            for name, cmd in self._harness.config.verification_steps:
+                engine.add_step(VerificationStep(name=name, command=cmd))
+        else:
+            engine.configure_defaults()
+        self._add_skill_verification(state, engine, VerificationStep)
+        self._emit("verification.started", {}, trace_id)
+        report = await engine.verify()
+
+        # Metacognition: self-critique the turn and merge it into the same gate.
+        if self._self_critique_enabled:
+            report = self._apply_self_critique(report, goal, final_output, state, trace_id)
+        return report
+
+    def _apply_self_critique(self, report, goal: str, final_output: str,
+                             state, trace_id: str):
+        """Run deterministic self-critique and fold it into the verification report."""
+        from core.agent.metacognition import SelfCritique
+        from core.agent.verification import VerificationResult
+
+        critique = SelfCritique(strict=self._self_critique_strict).critique(
+            goal=goal,
+            final_output=final_output,
+            tool_calls=getattr(state, "tool_calls", ()) if state is not None else (),
+            files_changed=getattr(state, "files_changed", ()) if state is not None else (),
+            errors=getattr(state, "errors", ()) if state is not None else (),
+        )
+        report.critique = critique.to_dict()
+        passed = critique.passed
+        result = VerificationResult(
+            step_name="self_critique",
+            passed=passed,
+            exit_code=0 if passed else 1,
+            command="self_critique",
+            summary="" if passed else critique.summary(),
+            error="" if passed else "self-critique raised blocking findings",
+        )
+        self._emit("critique.completed", critique.to_dict(), trace_id)
+        return report.merged(result)
+
+    def _add_skill_verification(self, state, engine, step_cls) -> None:
+        """Append verification steps declared by skills activated this run.
+
+        Skills loaded via ``skills.load`` land in ``state.active_skills``; each
+        one may declare a post-execution checklist in its manifest. Adding them
+        to the same engine keeps a single verification gate (no parallel path).
+        """
+        names = getattr(state, "active_skills", None) or ()
+        if not names:
+            return
+        try:
+            from skills.registry import get_skill
+        except Exception:
+            return
+        existing = {s.name for s in getattr(engine, "_steps", [])}
+        for skill_name in names:
+            skill = get_skill(skill_name)
+            if skill is None:
+                continue
+            for name, command in skill.verification_steps():
+                if name in existing:
+                    continue
+                engine.add_step(step_cls(name=name, command=command))
+                existing.add(name)
+
+    @staticmethod
+    def _build_verification_failure_context(report) -> str:
+        """Build bounded, structured failure context from VerificationReport.
+
+        Uses VerificationResult.summary for concise failure info (enough to
+        fix, not enough to overflow the context window). Falls back to the
+        LAST 5 lines of stderr (more useful than the first 200 chars for
+        test failures and stack traces).
+        """
+        lines = []
+        for r in report.results:
+            if not r.passed:
+                if r.summary:
+                    lines.append(f"- {r.summary}")
+                elif r.stderr:
+                    # Last 5 lines of stderr — usually the assertion/error
+                    tail = "\n".join(r.stderr.strip().splitlines()[-5:])
+                    lines.append(f"- {r.step_name}: {tail[:300]}")
+                elif r.error:
+                    lines.append(f"- {r.step_name}: {r.error[:300]}")
+                else:
+                    lines.append(f"- {r.step_name}: unknown failure")
+        critique = getattr(report, "critique", None)
+        if critique and not critique.get("passed", True):
+            for finding in critique.get("blocking", []):
+                lines.append(
+                    f"- self-critique: {finding.get('message', 'issue')}"
+                    + (f" ({finding['evidence']})" if finding.get("evidence") else "")
+                )
+        return "\n".join(lines) if lines else "unknown verification failure"
+
+    def _finish_observation(self, success: bool, response: str, state: AgentState,
+                            iteration: int) -> None:
+        self.observer.finish(
+            TaskStatus.COMPLETED if success else TaskStatus.FAILED,
+            response=response,
+            provider=state.provider,
+            model=state.model,
+            tokens=state.tokens_used,
+            iterations=iteration,
+            files_changed=state.files_changed,
+        )
+        self._record_decision(success, response, state)
+
+    def _record_decision(self, success: bool, response: str, state: AgentState) -> None:
+        """Persist a decision-memory entry for the finished task (opt-in)."""
+        if self.mem is None:
+            return
+        try:
+            outcome = response[:200] if response else ""
+            if not outcome and state.errors:
+                outcome = state.errors[-1][:200]
+            self.mem.record_decision(
+                goal=state.goal,
+                decision="completed" if success else "failed",
+                rationale=f"iterations={state.iteration} tokens={state.tokens_used} provider={state.provider}",
+                outcome=outcome,
+                project=str(self.project.root_path),
+            )
+        except Exception as exc:
+            self.logger.debug("Decision memory record failed: %s", exc)
+
+    def _result_observation(self, state: AgentState) -> dict[str, Any]:
+        observation = self.observer.summary()
+        observation["context_usage"] = state.context_usage
+        return observation
+
+    @staticmethod
+    def _system_tokens(system_prompt: str, tools: list | None) -> int:
+        tokens = estimate_tokens(system_prompt)
+        if tools:
+            tokens += estimate_tokens(json.dumps(tools))
+        return tokens
+
+    async def _handle_call(self, messages: list[dict[str, Any]], call, state: AgentState,
+                           trace_id: str, session_id: str) -> None:
+        self.logger.record(trace_id, events.TOOL_REQUESTED, {"tool": call.name})
+        result = await self._tool_service.execute_tool(
+            call, trace_id=trace_id, session_id=session_id,
+            append_to_messages=messages, state=state,
+        )
+        if result is not None:
+            await self._maybe_recover_browser(
+                result, messages, call, state, trace_id, session_id,
+            )
+        if self._tool_verifier.should_verify(call.name):
+            try:
+                vr = await self._tool_verifier.verify(call.name, call.arguments, "")
+                if vr and not vr.verified:
+                    self._emit("tool.verification_failed", {
+                        "tool": call.name, "check": vr.check_name,
+                        "message": vr.message,
+                    }, trace_id)
+            except Exception:
+                pass
+
+    async def _maybe_recover_browser(self, result, messages, call, state, trace_id,
+                                     session_id) -> None:
+        """Park in WAITING_BROWSER and relaunch a crashed browser (G10).
+
+        Only browser-namespace tools are candidates, only a positive
+        ``is_recoverable`` verdict triggers the path, and at most one recovery
+        sequence runs per iteration so a parallel batch cannot cascade. On
+        success the task resumes EXECUTING with a structured tool message; on
+        exhaustion it fails deterministically (TOOL_FAILURE) with the state
+        transition WAITING_BROWSER -> FAILED.
+        """
+        recovery = self._browser_recovery
+        if recovery is None or result is None:
+            return
+        if getattr(state, "browser_down_this_iter", False):
+            return
+        if getattr(result, "permission_denied", False) or getattr(result, "success", True):
+            return
+        tool_name = getattr(result, "tool_name", "") or call.name
+        if not (tool_name.startswith("orbit.") or tool_name.startswith("browser.")):
+            return
+        error = getattr(result, "error", "") or ""
+        if not recovery.is_recoverable(error):
+            return
+        state.browser_down_this_iter = True
+        if state.status == TaskStatus.EXECUTING:
+            state.transition(TaskStatus.WAITING_BROWSER)
+        elif state.status != TaskStatus.WAITING_BROWSER:
+            return
+        self._emit("browser.waiting", {
+            "tool": tool_name, "error": error[:200],
+        }, trace_id)
+        outcome = await recovery.recover(trace_id=trace_id, session_id=session_id)
+        call_id = getattr(result, "call_id", "") or call.id
+        if outcome.ok:
+            if state.status == TaskStatus.WAITING_BROWSER:
+                state.transition(TaskStatus.EXECUTING)
+            self._emit("browser.recovered", {
+                "tool": tool_name, "attempts": outcome.attempts,
+                "detail": outcome.detail,
+            }, trace_id)
+            messages.append({
+                "role": "tool", "tool_call_id": call_id, "name": tool_name,
+                "content": (
+                    "BROWSER RECOVERED — the browser process was restarted "
+                    f"({outcome.detail}). Reissue your last action."
+                ),
+            })
+        else:
+            from core.agent.state import FailureClass
+            state.failure_class = pick_worst_failure(
+                state.failure_class, FailureClass.TOOL_FAILURE,
+            )
+            detail = (
+                f"browser unavailable after {outcome.attempts} recovery "
+                f"attempt(s): {outcome.detail}"
+            )
+            state.errors.append(detail)
+            state.browser_unavailable = True
+            try:
+                state.transition(TaskStatus.FAILED)
+            except ValueError:
+                pass
+            self._emit("browser.unavailable", {
+                "tool": tool_name, "attempts": outcome.attempts,
+                "detail": outcome.detail, "failure_class": "tool_failure",
+            }, trace_id)
+            messages.append({
+                "role": "tool", "tool_call_id": call_id, "name": tool_name,
+                "content": f"BROWSER UNAVAILABLE — {detail}",
+            })
+
+    def _is_parallel_safe(self, call) -> bool:
+        """Tool calls that may run concurrently with other tool calls.
+
+        Only read-only, low/medium-risk tools are parallel-safe. Destructive
+        and high/critical-risk tools are excluded so their side effects never
+        overlap. Unknown tools are treated as serialized (safe default).
+        """
+        tool = self.registry.get(call.name) if call else None
+        if tool is None:
+            return False
+        if getattr(tool, "is_destructive", False):
+            return False
+        return getattr(tool, "risk", "safe") not in ("high", "critical")
+
+    async def _execute_tool_batch(self, calls, messages, state, trace_id,
+                                  session_id) -> None:
+        """Execute a batch of tool calls, parallelizing read-only runs.
+
+        Tool calls execute in the order the model requested them. Consecutive
+        parallel-safe (read-only) calls are gathered into a run and executed
+        concurrently via ``ToolExecutionService.execute_tools``; their tool
+        messages are appended to ``messages`` in input order. Destructive /
+        high-risk calls execute alone, at their position in the sequence, so
+        their side effects never overlap and relative ordering is preserved.
+        Verification runs for every call afterward.
+        """
+        for call in calls:
+            self.logger.record(trace_id, events.TOOL_REQUESTED, {"tool": call.name})
+
+        pending_safe: list = []
+        for call in calls:
+            if self._is_parallel_safe(call):
+                pending_safe.append(call)
+                continue
+            if pending_safe:
+                await self._run_safe_batch(pending_safe, messages, state, trace_id, session_id)
+                pending_safe = []
+            await self._handle_call(messages, call, state, trace_id, session_id)
+        if pending_safe:
+            await self._run_safe_batch(pending_safe, messages, state, trace_id, session_id)
+
+    async def _run_safe_batch(self, calls, messages, state, trace_id, session_id) -> None:
+        """Execute a run of parallel-safe calls concurrently (ordered appends)."""
+        if len(calls) == 1:
+            await self._handle_call(messages, calls[0], state, trace_id, session_id)
+            return
+        await self._tool_service.execute_tools(
+            calls, trace_id=trace_id, session_id=session_id,
+            append_to_messages=messages, state=state, parallel=True,
+        )
+        for call in calls:
+            await self._verify_tool(call, trace_id)
+
+    async def _verify_tool(self, call, trace_id: str) -> None:
+        """Run post-execution verification for a single tool call if enabled."""
+        if not self._tool_verifier.should_verify(call.name):
+            return
+        try:
+            vr = await self._tool_verifier.verify(call.name, call.arguments, "")
+            if vr and not vr.verified:
+                self._emit("tool.verification_failed", {
+                    "tool": call.name, "check": vr.check_name, "message": vr.message,
+                }, trace_id)
+        except Exception:
+            pass

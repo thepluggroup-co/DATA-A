@@ -1,0 +1,261 @@
+"""Google Gemini Provider - Multi-modal AI via Google AI Studio."""
+
+import logging
+import time
+from collections.abc import AsyncIterator
+from typing import Any
+
+from providers.base import LLMProvider, LLMResponse
+from providers.types import json_args, parse_gemini_function_calls, to_gemini_tools
+
+logger = logging.getLogger("jarvis.providers.gemini")
+
+
+class GeminiProvider(LLMProvider):
+    def __init__(self, config: dict, api_key: str,
+                 extra_keys: list[str] | None = None):
+        super().__init__("gemini", config)
+        # Multi-key rotation on 429 (mirrors OpenAICompatProvider._rotate_key)
+        self._keys = [k for k in [api_key] + (extra_keys or []) if k]
+        self._key_index = 0
+        self.api_key = self._keys[0]
+        self._client = None
+        self._sdk_package = "google.generativeai"
+        # The google-genai client has no useful default timeout — a dead
+        # endpoint hangs for minutes and stalls the router's fallback chain.
+        # Bound every request so the chain can move on (configurable via
+        # [gemini] timeout_seconds in config/models.toml).
+        self._timeout_seconds = float(config.get("timeout_seconds", 45.0))
+
+    def _get_client(self):
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self.api_key)
+            # Store model name for generate_content calls
+            self._model = self.config.get("model", "gemini-2.0-flash")
+        return self._client
+
+    def _rotate_key(self) -> bool:
+        """Move to the next API key; True when a fresh key is available."""
+        if len(self._keys) <= 1:
+            return False
+        self._key_index = (self._key_index + 1) % len(self._keys)
+        self.api_key = self._keys[self._key_index]
+        self._client = None  # force re-auth with the new key
+        logger.info("gemini: rotated to key index %d", self._key_index)
+        return True
+
+    def _convert_messages(self, messages: list[dict], system_prompt: str | None = None):
+        """Convert OpenAI-format messages (incl. tool_calls) to Gemini Content.
+
+        google-genai 2.x validates contents strictly via pydantic, so we build
+        its own Content/Part/FunctionCall/FunctionResponse objects instead of
+        hand-rolled dicts.
+        """
+        from google.genai import types as gtypes
+
+        contents = []
+        if system_prompt:
+            contents.append(gtypes.Content(role="user", parts=[gtypes.Part(text=system_prompt)]))
+            contents.append(gtypes.Content(role="model", parts=[gtypes.Part(text="Understood.")]))
+
+        id_to_name: dict[str, str] = {}
+        for msg in messages:
+            role = msg.get("role")
+            if role == "assistant" and msg.get("tool_calls"):
+                parts = []
+                if msg.get("content"):
+                    parts.append(gtypes.Part(text=msg["content"]))
+                for tc in msg["tool_calls"]:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "")
+                    if tc.get("id"):
+                        id_to_name[tc["id"]] = name
+                    parts.append(gtypes.Part(function_call=gtypes.FunctionCall(
+                        name=name, args=json_args(fn.get("arguments", "{}")),
+                    )))
+                contents.append(gtypes.Content(role="model", parts=parts))
+            elif role == "tool":
+                fn_name = id_to_name.get(msg.get("tool_call_id", ""), msg.get("name", ""))
+                contents.append(gtypes.Content(role="user", parts=[gtypes.Part(
+                    function_response=gtypes.FunctionResponse(
+                        name=fn_name, response={"result": msg.get("content", "")},
+                    )
+                )]))
+            else:
+                g_role = "model" if role == "assistant" else "user"
+                contents.append(gtypes.Content(role=g_role, parts=[gtypes.Part(text=msg.get("content", ""))]))
+
+        return self._merge_adjacent_user_turns(contents)
+
+    @staticmethod
+    def _merge_adjacent_user_turns(contents: list) -> list:
+        """Gemini forbids consecutive same-role turns; merge adjacent user parts."""
+        merged = []
+        for entry in contents:
+            role = entry.role if hasattr(entry, "role") else entry.get("role")
+            if role == "user" and merged:
+                last = merged[-1]
+                last_role = last.role if hasattr(last, "role") else last.get("role")
+                if last_role == "user":
+                    if hasattr(last, "parts"):
+                        last.parts.extend(entry.parts)
+                    else:
+                        last["parts"].extend(entry["parts"])
+                    continue
+            merged.append(entry)
+        return merged
+
+    async def complete(
+        self,
+        messages: list[dict],
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        tools: list | None = None,
+    ) -> LLMResponse:
+        client = self._get_client()
+        contents = self._convert_messages(messages, system_prompt)
+
+        config: dict[str, Any] = {
+            "max_output_tokens": max_tokens or self.config.get("max_tokens", 8192),
+            "temperature": temperature or self.config.get("temperature", 0.7),
+            # gemini-2.5-flash is a thinking model: without an explicit budget
+            # of 0 it spends seconds on hidden thoughts before the first
+            # visible token (Google's own guidance for lowest latency).
+            # Chat replies want speed; deep reasoning stays on the agent path
+            # via explicit config, not here.
+            "thinking_config": {"thinking_budget": 0},
+            # google-genai's automatic function calling wraps streaming calls
+            # in an SDK-side retry/round-trip loop (it logs "Direct use of AFC
+            # ... is not recommended"). We parse tool calls ourselves, so
+            # turn AFC off: fewer hidden round-trips, lower TTFT.
+            "automatic_function_calling": {"disable": True},
+        }
+        gemini_tools = to_gemini_tools(tools)
+        if gemini_tools:
+            config["tools"] = gemini_tools
+
+        start = time.time()
+        try:
+            import asyncio
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.models.generate_content,
+                    model=self._model,
+                    contents=contents,
+                    config=config,
+                ),
+                timeout=self._timeout_seconds,
+            )
+            latency = (time.time() - start) * 1000
+            text = ""
+            if response.candidates:
+                for part in response.candidates[0].content.parts or []:
+                    if hasattr(part, "text") and part.text:
+                        text += part.text
+            tool_calls = parse_gemini_function_calls(response)
+            prompt_tokens = (response.usage_metadata.prompt_token_count or 0) if response.usage_metadata else 0
+            completion_tokens = (response.usage_metadata.candidates_token_count or 0) if response.usage_metadata else 0
+
+            result = LLMResponse(
+                text=text,
+                model=self.config.get("model", "gemini-2.0-flash"),
+                provider="gemini",
+                tokens_prompt=prompt_tokens,
+                tokens_completion=completion_tokens,
+                tokens_used=prompt_tokens + completion_tokens,
+                latency_ms=latency,
+                finish_reason="stop",
+                tool_calls=tool_calls,
+            )
+            self.record_success(latency)
+            return result
+        except Exception as e:
+            error_str = str(e)
+            from providers.types import ErrorKind, classify_provider_error
+            kind = classify_provider_error(error_str)
+            if kind in (ErrorKind.RATE_LIMIT, ErrorKind.QUOTA_EXHAUSTED):
+                self.record_rate_limit()
+                if self._rotate_key():
+                    return await self.complete(
+                        messages, system_prompt, max_tokens, temperature, tools,
+                    )
+            else:
+                self.record_failure(error_str)
+            raise
+
+    async def complete_stream(
+        self,
+        messages: list[dict],
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        tools: list | None = None,
+        model: str | None = None,
+    ) -> AsyncIterator[str]:
+        import asyncio
+
+        client = self._get_client()
+        contents = self._convert_messages(messages, system_prompt)
+
+        config: dict[str, Any] = {
+            "max_output_tokens": max_tokens or self.config.get("max_tokens", 8192),
+            "temperature": temperature or self.config.get("temperature", 0.7),
+            # See _complete_once: thinking off + AFC off for lowest TTFT.
+            "thinking_config": {"thinking_budget": 0},
+            "automatic_function_calling": {"disable": True},
+        }
+        gemini_tools = to_gemini_tools(tools)
+        if gemini_tools:
+            config["tools"] = gemini_tools
+
+        start = time.time()
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+        sentinel = object()
+
+        def _produce() -> None:
+            try:
+                # google-genai 2.x: streaming is generate_content_stream; the
+                # generate_content(stream=True) call this used to make raises
+                # TypeError (no such kwarg), which made every Gemini attempt
+                # a guaranteed ~10s failure in the fallback chain.
+                response = client.models.generate_content_stream(
+                    model=model or self._model,
+                    contents=contents,
+                    config=config,
+                )
+                for chunk in response:
+                    if chunk.text:
+                        asyncio.run_coroutine_threadsafe(queue.put(chunk.text), loop)
+                asyncio.run_coroutine_threadsafe(queue.put(sentinel), loop)
+            except Exception as exc:
+                asyncio.run_coroutine_threadsafe(queue.put(exc), loop)
+
+        loop = asyncio.get_running_loop()
+        import threading
+        producer = threading.Thread(target=_produce, daemon=True)
+        producer.start()
+
+        try:
+            while True:
+                # Bound the inter-chunk wait: the producer thread is daemonized
+                # and generate_content itself is unbounded, so a stalled
+                # endpoint would otherwise block this consumer forever.
+                item = await asyncio.wait_for(queue.get(), timeout=self._timeout_seconds)
+                if item is sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+            latency = (time.time() - start) * 1000
+            self.record_success(latency)
+        except Exception as e:
+            error_str = str(e)
+            from providers.types import ErrorKind, classify_provider_error
+            kind = classify_provider_error(error_str)
+            if kind in (ErrorKind.RATE_LIMIT, ErrorKind.QUOTA_EXHAUSTED):
+                self.record_rate_limit()
+            else:
+                self.record_failure(error_str)
+            raise
