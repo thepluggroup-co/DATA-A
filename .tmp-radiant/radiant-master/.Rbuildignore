@@ -1,0 +1,12 @@
+^CRAN-RELEASE$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.travis\.yml$
+^docs$
+^inst/app/tests$
+cran-comments.md
+radiant.code-workspace
+.vscode
+^CRAN-SUBMISSION$
+.codespellrc
+.github

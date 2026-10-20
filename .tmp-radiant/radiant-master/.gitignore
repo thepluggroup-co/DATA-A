@@ -1,0 +1,10 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+inst/doc
+.DS_Store
+radiant.Rproj
+^inst/app/tests$
+radiant.dcf
+.vscode

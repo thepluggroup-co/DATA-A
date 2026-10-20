@@ -164,12 +164,17 @@ class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
 
+class ProcedureAnalyse(BaseModel):
+    methode: str = Field(pattern=r"^(tri_plat|croisement|comparaison|regression|acp|classification)$")
+    variable: str = Field(default="", max_length=120)
+    filtre: str = Field(default="", max_length=500)
+
 
 # ------------------------------------------------------------------------------------------------ outils
 def _moi(u: Utilisateur, o: Organisation, sw: SessionWeb) -> dict[str, Any]:
     return {"id": str(u.id), "nom": u.nom, "email": u.email, "role": u.role, "organisation": o.nom,
             "organisation_type": o.type, "csrf": sw.csrf, "permissions": sorted(securite.permissions(u.role)),
-            "second_facteur_requis": u.role in securite.ROLES_USINE and not sw.second_facteur}
+            "second_facteur_requis": bool(u.totp_secret) and u.role in securite.ROLES_USINE and not sw.second_facteur}
 
 
 def _projet(s: Session, ident: str) -> Projet:
@@ -329,6 +334,18 @@ def creer_app(cfg: Config) -> FastAPI:
         if not p.base_analyse:
             raise HTTPException(409, "base d'analyse non livrée")
         return donnees.variables(donnees.jeu(chemin_sur(cfg, p.base_analyse)))
+
+    @app.get("/api/projets/{ident}/tri-plats")
+    def tri_plat(ident: str, variable: str, c: Client, s: BD) -> dict[str, Any]:
+        p = _projet(s, ident)
+        if not p.base_analyse:
+            raise HTTPException(409, "base d'analyse non livrée")
+        jd = donnees.jeu(chemin_sur(cfg, p.base_analyse))
+        if variable not in jd.table.columns:
+            raise HTTPException(422, "variable inconnue")
+        serie = jd.table[variable].dropna().value_counts(dropna=False)
+        total = int(serie.sum())
+        return {"variable": variable, "base": total, "lignes": [{"modalite": str(k), "effectif": int(v), "pourcentage": round(float(v) * 100 / total, 2)} for k, v in serie.items()], "avertissements": ["Les modalités rares doivent être interprétées avec prudence."]}
 
     @app.post("/api/projets/{ident}/croisements")
     def croisement(ident: str, d: DemandeCroisement, c: Client, s: BD) -> JSONResponse:
@@ -501,6 +518,20 @@ def creer_app(cfg: Config) -> FastAPI:
     def cabinet_versions_lire(ident: str, c: Usine, s: BDUsine) -> list[dict[str, Any]]:
         p = _projet(s, ident)
         return list(p.parametres.get("versions", []))
+
+    @app.get("/api/cabinet/projets/{ident}/analyses")
+    def analyses_lire(ident: str, c: Usine, s: BDUsine) -> list[dict[str, Any]]:
+        return list(_projet(s, ident).parametres.get("analyses", []))
+
+    @app.post("/api/cabinet/projets/{ident}/analyses")
+    def analyse_creer(ident: str, d: ProcedureAnalyse, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        analyses = list(p.parametres.get("analyses", []))
+        entree = {"id": uuid.uuid4().hex[:10], **d.model_dump(), "statut": "a_valider",
+                  "auteur": c.utilisateur.nom, "le": securite.maintenant().isoformat()}
+        analyses.append(entree); p.parametres = {**p.parametres, "analyses": analyses}
+        audit.journaliser(s, "procedure_analyse_creee", p.code, entree, p.organisation_id, c.utilisateur.id)
+        return entree
 
     @app.post("/api/assistant")
     def assistant_question(d: QuestionAssistant, c: Client, s: BD) -> dict[str, Any]:

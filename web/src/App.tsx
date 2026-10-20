@@ -79,6 +79,9 @@ function Coquille({ moi, enfants }: { moi: Moi; enfants: ReactNode }): ReactNode
   const aller = useNavigate();
   const lieu = useLocation();
   const { nuit, basculer } = useContext(ContexteApparence);
+  const [commande, setCommande] = useState(false);
+  const [rechercheCommande, setRechercheCommande] = useState("");
+  useEffect(() => { const clavier = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setCommande(true); } if (e.key === "Escape") setCommande(false); }; window.addEventListener("keydown", clavier); return () => window.removeEventListener("keydown", clavier); }, []);
   const usine = estUsine(moi);
   const modules = usine ? MODULES_USINE : MODULES_CLIENT;
   const titre = TITRES.find(([r]) => r.test(lieu.pathname))?.[1] ?? "";
@@ -95,11 +98,12 @@ function Coquille({ moi, enfants }: { moi: Moi; enfants: ReactNode }): ReactNode
           <div><small>{usine ? "Console cabinet" : "Espace client"}</small></div>
         </div>
         <div className="espace">{usine ? "Pilotage" : "Mes données"}</div>
-        <nav aria-label="Navigation principale">
-          {modules.map((m) => (
-            <NavLink key={m.vers} to={m.vers} end={m.fin}><Icone nom={m.icone} />{m.nom}</NavLink>
-          ))}
-        </nav>
+        <div className="navigation-bloc"><div className="navigation-titre">Modules</div><nav aria-label="Modules métier">
+          {modules.slice(0, usine ? 12 : modules.length).map((m) => <NavLink key={m.vers} to={m.vers} end={m.fin}><Icone nom={m.icone} />{m.nom}</NavLink>)}
+        </nav></div>
+        {usine && <div className="navigation-bloc navigation-outils"><div className="navigation-titre">Outils</div><nav aria-label="Outils de gestion">
+          {modules.slice(12).map((m) => <NavLink key={m.vers} to={m.vers} end={m.fin}><Icone nom={m.icone} />{m.nom}</NavLink>)}
+        </nav></div>}
         <div className="pied-laterale">
           <div className="etat-systeme"><span className="point" aria-hidden="true" />Systèmes opérationnels</div>
           <div className="nom">{moi.nom}</div>
@@ -119,6 +123,7 @@ function Coquille({ moi, enfants }: { moi: Moi; enfants: ReactNode }): ReactNode
         {SOUS_ONGLETS[lieu.pathname] && <nav className="sous-onglets" aria-label="Sous-navigation">{SOUS_ONGLETS[lieu.pathname].map((s) => <NavLink key={s.vers} to={s.vers}>{s.nom}</NavLink>)}</nav>}
         <main>{enfants}</main>
       </div>
+      {commande && <div className="commande-fond" role="dialog" aria-label="Commande globale" onClick={() => setCommande(false)}><div className="commande" onClick={(e) => e.stopPropagation()}><input autoFocus value={rechercheCommande} onChange={(e) => setRechercheCommande(e.target.value)} placeholder="Rechercher un module…" aria-label="Rechercher un module" onKeyDown={(e) => { if (e.key === "Escape") setCommande(false); }} /><div className="commande-liens">{modules.filter((m) => m.nom.toLowerCase().includes(rechercheCommande.toLowerCase())).slice(0, 10).map((m) => <NavLink key={m.vers} to={m.vers} onClick={() => { setCommande(false); setRechercheCommande(""); }}>{m.nom}</NavLink>)}{!modules.some((m) => m.nom.toLowerCase().includes(rechercheCommande.toLowerCase())) && <span className="mention">Aucun module correspondant.</span>}</div><small>Échap pour fermer · Ctrl + K pour ouvrir</small></div></div>}
     </div>
   );
 }

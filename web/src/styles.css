@@ -68,6 +68,9 @@ a:hover { text-decoration: underline; }
 .marque small { color: var(--texte-3); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; display: block; }
 .espace { font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--texte-3); margin: 0.6rem 0.6rem 0.2rem; }
 .laterale nav { display: flex; flex-direction: column; gap: 0.2rem; align-items: stretch; text-align: left; }
+.navigation-bloc { display: grid; gap: .35rem; }
+.navigation-titre { padding: .35rem .7rem; color: var(--texte-3); font-size: .68rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.navigation-outils { margin-top: .65rem; padding-top: .65rem; border-top: 1px solid var(--bord); }
 .laterale nav a {
   display: flex; align-items: center; gap: 0.7rem; width: 100%; box-sizing: border-box; padding: 0.7rem 0.75rem; border-radius: 8px; color: var(--texte-2);
   font-weight: 600; border: 1px solid transparent; transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -142,6 +145,16 @@ body.theme-clair { background: #f4f8fc; background-image: radial-gradient(900px 
 .assistant-saisie { display: flex; gap: .6rem; }
 .assistant-saisie input { flex: 1; }
 .assistant-garde { align-self: start; }
+.atelier-analyse { margin: 1rem 0; }
+.atelier-grille { display: grid; grid-template-columns: 1fr 1fr auto; gap: .8rem; align-items: end; }
+.atelier-grille label { display: grid; gap: .35rem; color: var(--texte-2); font-weight: 600; }
+@media (max-width: 760px) { .atelier-grille { grid-template-columns: 1fr; } }
+.commande-fond { position: fixed; inset: 0; z-index: 30; display: grid; place-items: start center; padding-top: 12vh; background: rgba(2, 10, 25, .62); backdrop-filter: blur(8px); }
+.commande { width: min(620px, calc(100vw - 2rem)); padding: 1rem; border: 1px solid var(--bord-fort); border-radius: 14px; background: var(--verre-fort); box-shadow: var(--ombre); }
+.commande input { width: 100%; box-sizing: border-box; font-size: 1.05rem; }
+.commande-liens { display: grid; grid-template-columns: repeat(2, 1fr); gap: .35rem; margin: .8rem 0; }
+.commande-liens a { padding: .65rem; border-radius: 7px; color: var(--texte-2); }
+.commande-liens a:hover { background: rgba(21, 171, 220, .12); color: var(--texte); text-decoration: none; }
 @media (max-width: 760px) { .assistant-layout { grid-template-columns: 1fr; } .assistant-saisie { flex-direction: column; } }
 .parametres-nav svg { width: 18px; height: 18px; color: var(--turquoise); }
 .parametres-nav small { font-size: 0.68rem; color: var(--texte-3); }
@@ -263,7 +276,9 @@ a.bouton:hover { background: rgba(21, 234, 224, 0.08); text-decoration: none; }
 .connexion button[type="submit"] { width: 100%; padding: 0.75rem; }
 
 /* ---------------------------------------------------------------- mobile */
-@media (max-width: 900px) {
+/* La navigation reste verticale sur tablette ; elle devient compacte seulement
+   sur les écrans mobiles étroits. */
+@media (max-width: 640px) {
   .coquille { grid-template-columns: 1fr; }
   .laterale { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 0.6rem 0.8rem; }
   .laterale nav { flex-direction: row; flex-wrap: wrap; }
