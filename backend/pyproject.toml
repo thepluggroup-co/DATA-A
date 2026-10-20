@@ -51,7 +51,9 @@ packages = ["src/plateforme"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# Les environnements Windows verrouillent parfois AppData\Local\Temp ; garder
+# les fixtures et les clusters PostgreSQL de test dans un dossier du projet.
+addopts = "-ra --basetemp=.pytest-tmp"
 
 [tool.ruff]
 line-length = 160
