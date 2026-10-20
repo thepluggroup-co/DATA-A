@@ -15,7 +15,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
@@ -39,9 +38,12 @@ FOND = PatternFill("solid", fgColor="1F4E78")
 
 
 def charger_quotas(chemin: str | Path, plan: PlanTerrain) -> dict[int, tuple[str, list[int]]]:
-    """Quotas du plan d'échantillonnage (format provisoire, modèle complet en phase 6 / M2)."""
-    brut = yaml.safe_load(Path(chemin).read_text(encoding="utf-8"))
-    return {int(code): (str(q["cible"]), [int(q[v.id]) for v in plan.villes]) for code, q in brut["quotas"].items()}
+    """Quotas du plan d'échantillonnage validé (echantillonnage/plan.py) : {code cible: (libellé, quotas dans l'ordre des
+    villes du plan de terrain)}."""
+    from plateforme.echantillonnage.plan import charger
+
+    pe = charger(chemin)
+    return {q.code: (q.cible, [q.villes[v.id] for v in plan.villes]) for q in pe.quotas}
 
 
 def _feuille(wb: Workbook, titre: str, premiere: bool = False) -> Worksheet:

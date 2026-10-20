@@ -1,0 +1,7 @@
+# Cabinet — FICTIF. Domaine « .invalid » : réservé (RFC 2606), il ne peut désigner aucun site réel.
+nom: "Cabinet de démonstration DATA'A"
+telephone: "000 000 000"
+email: "contact@demo.invalid"
+ville: Douala
+logo: ../../reference/charte/data_a/logo_data_a.png
+url_verification: "https://verification.demo.invalid/badge"

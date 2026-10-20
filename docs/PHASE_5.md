@@ -1,6 +1,6 @@
 # Phase 5 — Rapport et restitution (M15)
 
-**État : critère d'acceptation atteint le 19/10/2026 ; en attente de la validation écrite du fondateur** (porte de validation, CLAUDE.md §11). Réponses du fondateur le 18/10/2026 (D-036, D-037) : il fournit le rapport Word livré et la charte THE PLUG ; texte sans IA ; formats Word, PowerPoint et PDF. En attendant ces fichiers, les parties qui n'en dépendent pas sont construites (contrôles bloquants, note de base, graphiques).
+**État : VALIDÉE (D-047, 19/10/2026).** 371 tests au vert, ruff et mypy strict sans erreur ; rapport EDM régénéré complet (77 pages, 14 tableaux, 57 graphiques). Réponses du fondateur le 18/10/2026 (D-036, D-037) : il fournit le rapport Word livré et la charte THE PLUG ; texte sans IA ; formats Word, PowerPoint et PDF. En attendant ces fichiers, les parties qui n'en dépendent pas sont construites (contrôles bloquants, note de base, graphiques).
 
 ## Critère d'acceptation
 Rapport régénéré sans aucune incohérence de base, de total ou de numérotation.

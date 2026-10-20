@@ -90,8 +90,10 @@ def chiffres_de_base(note: NoteDeBase) -> dict[str, float]:
 def quotas_du_plan(plan_echantillonnage: str | Path, terrain: PlanTerrain) -> dict[float, dict[float, int]]:
     """Quotas du plan d'échantillonnage (2e source de vérité) : {code cible: {code ville: quota}}, codes de ville du plan
     de terrain (VILLEREG)."""
-    brut: dict[str, Any] = yaml.safe_load(Path(plan_echantillonnage).read_text(encoding="utf-8")) or {}
-    return {float(code): {float(v.code): int(q[v.id]) for v in terrain.villes if v.id in q} for code, q in (brut.get("quotas") or {}).items()}
+    from plateforme.echantillonnage.plan import charger as charger_plan
+
+    pe = charger_plan(plan_echantillonnage)
+    return {float(q.code): {float(v.code): q.villes[v.id] for v in terrain.villes if v.id in q.villes} for q in pe.quotas}
 
 
 def _arguments(d: dict[str, Any], contexte: dict[str, Any], k: int) -> dict[str, Any]:

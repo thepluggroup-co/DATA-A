@@ -1,0 +1,21 @@
+# Gabarit de chronogramme d'une étude de marché (module M5).
+# Source : chronogramme EDM (reference/prive/documents/chonnogramme EDM.pdf, cabinet M2B Conseils, 2026) : 4 phases,
+# tâches et durées en jours ouvrés reprises telles quelles ; structure B-SOLUTIONS décrite dans CLAUDE.md §3.2 (ressources
+# affectées avec % d'occupation : Expert, Appui 1, Appui 2 à 25 %). Les % sont des paramètres du gabarit, à ajuster par étude.
+# `ancre` : tâche dont les dates viennent du plan de terrain (formation, pré-test, collecte) ; `types` : types d'étude
+# concernés (toutes par défaut). « Collecte des données » de la phase 3 du chronogramme EDM est libellée ici
+# « Contrôle et apurement des données » (même durée), pour ne pas la confondre avec la collecte de terrain.
+nom: Étude de marché — quanti, quali ou mixte
+source: "chonnogramme EDM.pdf (M2B Conseils, 2026) ; CLAUDE.md §3.2 (B-SOLUTIONS)"
+taches:
+  - {id: DOC, phase: "1. Étude exploratoire", libelle: "Étude documentaire", duree: 1, ressources: {expert: 100, appui_2: 25}}
+  - {id: QUALEXP, phase: "1. Étude exploratoire", libelle: "Étude qualitative exploratoire", duree: 3, apres: [DOC], ressources: {expert: 100, appui_1: 100}}
+  - {id: QUEST, phase: "2. Enquête par sondage", libelle: "Élaboration du questionnaire ou du guide d'entretien", duree: 3, apres: [QUALEXP], ressources: {expert: 100, appui_1: 100}}
+  - {id: RDV, phase: "2. Enquête par sondage", libelle: "Prise de rendez-vous", duree: 2, apres: [QUEST], types: [quali, mixte], ressources: {appui_1: 100}}
+  - {id: FORM, phase: "2. Enquête par sondage", libelle: "Recrutement et formation des enquêteurs", duree: 1, apres: [QUEST], ancre: formation, ressources: {expert: 100, appui_1: 100, enqueteurs: 100}}
+  - {id: PRETEST, phase: "2. Enquête par sondage", libelle: "Pré-test et ajustement du questionnaire", duree: 1, apres: [FORM], ancre: pre_test, ressources: {expert: 100, appui_1: 100, enqueteurs: 100}}
+  - {id: COLLECTE, phase: "2. Enquête par sondage", libelle: "Collecte des données (terrain)", duree: 4, apres: [PRETEST], ancre: collecte, ressources: {expert: 100, appui_1: 100, superviseurs: 100, enqueteurs: 100}}
+  - {id: APUREMENT, phase: "3. Traitement et analyse", libelle: "Contrôle et apurement des données", duree: 1, apres: [COLLECTE], ressources: {expert: 100, appui_1: 100}}
+  - {id: SYNTHESE, phase: "3. Traitement et analyse", libelle: "Synthèse", duree: 3, apres: [APUREMENT], ressources: {expert: 100, appui_1: 100, appui_2: 25}}
+  - {id: ANALYSE, phase: "3. Traitement et analyse", libelle: "Traitement et analyse", duree: 1, apres: [SYNTHESE], ressources: {expert: 100, appui_1: 100, appui_2: 25}}
+  - {id: RAPPORT, phase: "4. Rédaction du rapport final", libelle: "Rédaction du rapport final", duree: 6, apres: [ANALYSE], ressources: {expert: 100, appui_1: 100}}

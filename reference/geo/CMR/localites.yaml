@@ -1,0 +1,59 @@
+# Localités du Cameroun : villes, quartiers et points de collecte, chacun avec sa source (jamais de nom inventé).
+# Graphie : forme courante (celle de CLAUDE.md §3.1, fournie par le fondateur) ; la graphie du document source est gardée
+# en alias. Codes courts des villes (préfixes des N° de fiche) : V11 (VILLES, DLA/YDE/BAF).
+# Les zones d'enquête (« Zone 1 »…) ne sont pas géographiques : elles appartiennent au plan de terrain de l'étude.
+pays: CMR
+niveaux: {0: pays, 1: région, 2: département, 3: arrondissement}
+
+localites:
+  # ----------------------------------------------------------------------------------------------------- villes
+  - {id: DOUALA, type: ville, code_court: DLA, nom: Douala, pcode: CM005004, source: "HDX COD-AB, cmr_admincapitals (chef-lieu du Wouri)"}
+  - {id: YAOUNDE, type: ville, code_court: YDE, nom: Yaoundé, alias: [Yaounde], pcode: CM002007, source: "HDX COD-AB, cmr_admincapitals (chef-lieu du Mfoundi)"}
+  - {id: BAFOUSSAM, type: ville, code_court: BAF, nom: Bafoussam, pcode: CM008006, source: "HDX COD-AB, cmr_admincapitals (chef-lieu de la Mifi)"}
+  - {id: DSCHANG, type: ville, nom: Dschang, pcode: CM008005001, source: "HDX COD-AB, cmr_admin3 (arrondissement de Dschang, Menoua)",
+     note: "Commune distincte de Bafoussam ; rattachée à la zone 4 de Bafoussam dans l'organisation EDM (D-048)"}
+
+  # ----------------------------------------------------------------------------- Douala (ORGANISATION_EDM, 2026)
+  - {id: DOUALA.BONANJO, type: quartier, nom: Bonanjo, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.BALI, type: quartier, nom: Bali, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.AKWA, type: quartier, nom: Akwa, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.NEW_BELL, type: quartier, nom: New Bell, alias: [New bell], parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.TERGAL, type: quartier, nom: Tergal, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.BONAMOUSSADI, type: quartier, nom: Bonamoussadi, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.KOTTO, type: quartier, nom: Kotto, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.AKWA_NORD, type: quartier, nom: Akwa-Nord, alias: [Akwa-nord], parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.MAKEPE, type: quartier, nom: Makepe, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.BEEDI, type: quartier, nom: Beedi, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.BONABERI, type: quartier, nom: Bonabéri, alias: [Bonaberi], parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.DEIDO, type: quartier, nom: Deïdo, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.CITE_SIC, type: quartier, nom: Cité-Sic, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.NDOKOTI, type: quartier, nom: Ndokoti, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.VILLAGE, type: quartier, nom: Village, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.DAKAR_BRAZZAVILLE, type: quartier, nom: Dakar-Brazzaville, parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.CITE_DES_PALMIERS, type: quartier, nom: Cité des Palmiers, alias: [Cite des palmiers], parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: DOUALA.PK10_PK14, type: quartier, nom: "PK 10 à 14", alias: ["PK 10, 11, 12, 13 et 14"], parent: DOUALA, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf",
+     note: "Secteur des points kilométriques 10 à 14, saisi tel quel (un seul secteur dans la source)"}
+  # ---------------------------------------------------------------------------- Yaoundé (ORGANISATION_EDM, 2026)
+  - {id: YAOUNDE.LONGKAK, type: quartier, nom: Longkak, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.OMNISPORT_NGOUSSO, type: quartier, nom: Omnisport-Ngousso, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.ESSOS, type: quartier, nom: Essos, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.BASTOS, type: quartier, nom: Bastos, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.CITE_VERTE, type: quartier, nom: Cité Verte, alias: [Cité verte], parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.BIYEM_ASSI, type: quartier, nom: Biyem-Assi, alias: [Biyem-assi], parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.MENDONG, type: quartier, nom: Mendong, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.MVAN, type: quartier, nom: Mvan, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.MVOG_MBI, type: quartier, nom: Mvog-Mbi, alias: [Mvog-mbi], parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.NKOL_NDONGO, type: quartier, nom: Nkol-Ndongo, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.CENTRE_ADMINISTRATIF, type: quartier, nom: Centre administratif, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.BRIQUETERIE, type: quartier, nom: Briqueterie, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: YAOUNDE.ETOA_MEKI, type: quartier, nom: Etoa-Meki, parent: YAOUNDE, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  # -------------------------------------------------------------------------- Bafoussam (ORGANISATION_EDM, 2026)
+  - {id: BAFOUSSAM.TAMDJA, type: quartier, nom: Tamdja, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.CENTRE_ADMINISTRATIF, type: quartier, nom: Centre administratif, alias: [Centre admistratif], parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.QUARTIER_HAOUSSA, type: quartier, nom: Quartier Haoussa, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.MARCHE_A, type: point, nom: Marché A, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.MARCHE_B, type: point, nom: Marché B, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.GARE_ROUTIERE, type: point, nom: Gare routière (sortie de la ville), alias: [Gare routiére sortie de la ville], parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.KAMKOP, type: quartier, nom: Kamkop, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf"}
+  - {id: BAFOUSSAM.BALENVENG, type: quartier, nom: Balenveng, parent: BAFOUSSAM, source: "ORGANISATION_EDM EQUIPEMENTS ELECTRIQUES.pdf",
+     note: "Rattachement à Bafoussam selon l'organisation EDM (zone 4, avec Dschang) : localité peut-être hors de la ville, à confirmer"}

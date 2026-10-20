@@ -1,0 +1,84 @@
+# Dictionnaire — PROJET FICTIF DE DÉMONSTRATION (1re source de vérité). Cibles et villes alignées sur le brief.
+etude: DEMO_FOURNITURES_SCOLAIRES
+version: '01'
+langue_reference: fr
+langues: [fr, en]
+titre:
+  fr: "Enquête de démonstration — achats de fournitures scolaires (projet fictif)"
+  en: "Demonstration survey — school supplies purchasing (fictitious project)"
+statut: valide
+source: "Projet fictif de démonstration (phase 6)"
+sections:
+  - {id: S1, libelles: {fr: "1. Profil du répondant", en: "1. Respondent profile"}}
+  - {id: S2, libelles: {fr: "2. Habitudes d'achat", en: "2. Buying habits"}}
+  - {id: S3, libelles: {fr: "3. Attentes", en: "3. Expectations"}}
+identification:
+  - {role: enqueteur, libelles: {fr: Identifiant enquêteur, en: Enumerator ID}, type: choix_unique, obligatoire: true}
+  - {role: quartier, libelles: {fr: Quartier / zone, en: Neighbourhood / area}, type: texte, obligatoire: true}
+  - role: accord_recontact
+    libelles: {fr: "L'enquêté accepte d'être recontacté", en: "The respondent agrees to be contacted again"}
+    type: choix_unique
+    obligatoire: true
+    modalites:
+      - {code: 1, libelles: {fr: Oui, en: 'Yes'}}
+      - {code: 2, libelles: {fr: Non, en: 'No'}}
+questions:
+  - numero: 1
+    code: VOUSETES
+    section: S1
+    libelles: {fr: Vous êtes, en: You are}
+    type: choix_unique
+    mesure: NOMINAL
+    role: cible
+    modalites:
+      - {code: 1, libelles: {fr: "Parent d'élève", en: Parent}}
+      - {code: 2, libelles: {fr: Enseignant, en: Teacher}}
+      - {code: 3, libelles: {fr: "Librairie / revendeur", en: "Bookshop / reseller"}}
+  - numero: 2
+    code: VILLEREG
+    section: S1
+    libelles: {fr: Ville, en: City}
+    type: choix_unique
+    mesure: NOMINAL
+    prerempli: ville
+    modalites:
+      - {code: 1, libelles: {fr: Douala, en: Douala}}
+      - {code: 2, libelles: {fr: Yaoundé, en: Yaoundé}}
+      - {code: 3, libelles: {fr: Bafoussam, en: Bafoussam}}
+  - numero: 3
+    code: FREQACHA
+    section: S2
+    libelles: {fr: Fréquence d'achat de fournitures scolaires, en: How often do you buy school supplies}
+    type: choix_unique
+    mesure: ORDINAL
+    modalites:
+      - {code: 1, libelles: {fr: Chaque semaine, en: Every week}}
+      - {code: 2, libelles: {fr: Chaque mois, en: Every month}}
+      - {code: 3, libelles: {fr: "À la rentrée seulement", en: At the start of the school year only}}
+  - numero: 4
+    code: LIEACHPR
+    section: S2
+    libelles: {fr: Lieu d'achat principal, en: Main place of purchase}
+    type: choix_unique
+    mesure: NOMINAL
+    modalites:
+      - {code: 1, libelles: {fr: Librairie, en: Bookshop}}
+      - {code: 2, libelles: {fr: Marché, en: Market}}
+      - {code: 3, libelles: {fr: Supermarché, en: Supermarket}}
+    autre: {code: 4, libelles: {fr: Autre, en: Other}, variable: LIEACHAU}
+  - numero: 5
+    code: MONMOYAC
+    section: S2
+    libelles: {fr: Montant moyen par achat (FCFA), en: Average amount per purchase (FCFA)}
+    type: choix_unique
+    mesure: ORDINAL
+    modalites:
+      - {code: 1, libelles: {fr: "<10k", en: "<10k"}}
+      - {code: 2, libelles: {fr: "10k–50k", en: "10k–50k"}}
+      - {code: 3, libelles: {fr: ">50k", en: ">50k"}}
+  - numero: 6
+    code: UNESUGGE
+    section: S3
+    libelles: {fr: Une suggestion pour un nouveau point de vente, en: A suggestion for a new shop}
+    type: texte
+    obligatoire: false

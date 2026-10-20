@@ -299,6 +299,76 @@ _OPTIONS_ANALYSE: list[tuple[str, dict[str, Any]]] = [
     ("--plan-terrain", {"required": True}), ("--plan-analyse", {"required": True}), ("--decisions", {}), ("--sortie", {"required": True})]
 
 
+def _geo_importer(args: argparse.Namespace) -> int:
+    from plateforme.geo.hdx import lire_hdx
+    from plateforme.geo.referentiel import ecrire_admin
+
+    unites = lire_hdx(args.xlsx, args.iso3, args.niveau_max)
+    sortie = ecrire_admin(unites, args.sortie)
+    effectifs = " ; ".join(f"niveau {n} : {sum(1 for u in unites if u.niveau == n)}" for n in range(args.niveau_max + 1))
+    print(f"✔ {len(unites)} unités ({effectifs}) → {sortie}")
+    print("  Reporter la source, la date et la licence dans SOURCE.md du pays.")
+    return 0
+
+
+def _geo_verifier(args: argparse.Namespace) -> int:
+    from pydantic import ValidationError
+
+    from plateforme.geo import referentiel
+
+    try:
+        ref = referentiel.charger(args.dossier)
+    except (ValidationError, ValueError, KeyError) as e:
+        print(f"✘ référentiel invalide : {e}")
+        return 1
+    types = {t: sum(1 for loc in ref.localites if loc.type == t) for t in ("ville", "quartier", "point")}
+    print(f"✔ {ref.pays} : {len(ref.unites)} unités administratives, {len(ref.localites)} localités "
+          f"({types['ville']} villes, {types['quartier']} quartiers, {types['point']} points)")
+    return 0
+
+
+def _projet_initialiser(args: argparse.Namespace) -> int:
+    from plateforme.projet import projet as pj
+
+    p = pj.charger(args.dossier)
+    try:
+        ech, ter = pj.initialiser_plans(p, ecraser=args.ecraser)
+    except FileExistsError as e:
+        print(f"✘ {e}")
+        return 1
+    pe, t = p.exiger_echantillonnage(), p.exiger_terrain()
+    print(f"✔ {ech.name} : {pe.total()} fiches, {len(pe.quotas)} cibles × {len(pe.villes)} villes")
+    print(f"✔ {ter.name} : {len(t.enqueteurs)} postes, {len(t.zones)} zones, terrain du {min(t.jours)} au {max(t.jours)}")
+    return _projet_verifier(args)
+
+
+def _projet_verifier(args: argparse.Namespace) -> int:
+    from plateforme.projet import projet as pj
+
+    ecarts = pj.verifier(pj.charger(args.dossier))
+    for e in ecarts:
+        print(f"✘ {e}")
+    if not ecarts:
+        print("✔ sources du projet cohérentes")
+    return 1 if ecarts else 0
+
+
+def _projet_documents(args: argparse.Namespace) -> int:
+    from plateforme.documents.produire import ProjetIncoherent, produire
+    from plateforme.projet import projet as pj
+
+    try:
+        ecrits, modifiees = produire(pj.charger(args.dossier), Path(args.sortie), en_pdf=args.pdf)
+    except ProjetIncoherent as e:
+        print(f"✘ {e}")
+        return 1
+    for nom, produits in ecrits.items():
+        print(f"✔ {nom} : {', '.join(f.name for f in produits)}")
+    if modifiees:
+        print(f"Sources modifiées depuis la génération précédente : {', '.join(modifiees)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for flux in (sys.stdout, sys.stderr):          # console Windows en cp1252 : ✔ ⚠ ✘ → et accents
         if hasattr(flux, "reconfigure"):
@@ -390,6 +460,29 @@ def main(argv: list[str] | None = None) -> int:
     dl.add_argument("--plan-terrain", required=True)
     dl.add_argument("--sortie", required=True)
     dl.set_defaults(f=_liens)
+    ge = sous.add_parser("geo", help="référentiel géographique (M3)").add_subparsers(dest="action", required=True)
+    gi = ge.add_parser("importer-hdx", help="niveaux administratifs depuis le répertoire .xlsx COD-AB de HDX (licence à vérifier)")
+    gi.add_argument("xlsx")
+    gi.add_argument("--iso3", required=True)
+    gi.add_argument("--niveau-max", type=int, default=3)
+    gi.add_argument("--sortie", required=True, help="admin.csv du pays (reference/geo/<PAYS>/admin.csv)")
+    gi.set_defaults(f=_geo_importer)
+    gv = ge.add_parser("verifier", help="contrôle du référentiel d'un pays (P-codes, rattachements, sources)")
+    gv.add_argument("dossier", help="reference/geo/<PAYS>")
+    gv.set_defaults(f=_geo_verifier)
+    pj = sous.add_parser("projet", help="amont et documents du projet (phase 6)").add_subparsers(dest="action", required=True)
+    pi = pj.add_parser("initialiser", help="plans d'échantillonnage et de terrain rédigés depuis le brief")
+    pi.add_argument("dossier", help="dossier du projet (projet.yaml)")
+    pi.add_argument("--ecraser", action="store_true", help="régénère des plans existants (leurs retouches sont perdues)")
+    pi.set_defaults(f=_projet_initialiser)
+    pv = pj.add_parser("verifier", help="cohérence entre brief, dictionnaire, plans, vivier et référentiel")
+    pv.add_argument("dossier")
+    pv.set_defaults(f=_projet_verifier)
+    pd = pj.add_parser("documents", help="tous les documents du projet (refus si les sources sont incohérentes)")
+    pd.add_argument("dossier")
+    pd.add_argument("--sortie", required=True)
+    pd.add_argument("--pdf", action="store_true", help="ajoute la version PDF de chaque document Word")
+    pd.set_defaults(f=_projet_documents)
     args = p.parse_args(argv)
     code: int = args.f(args)
     return code
