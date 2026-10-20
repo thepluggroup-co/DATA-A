@@ -74,6 +74,10 @@ class Brief(BaseModel):
     titre: str
     client: Client
     besoin: str = Field(description="Besoin d'information exprimé par le client")
+    antecedents: str = Field(default="", description="Historique du client et travaux antérieurs")
+    marche: str = Field(default="", description="Description du marché étudié")
+    produits: str = Field(default="", description="Produits ou services concernés")
+    attentes: str = Field(default="", description="Décisions, projections et livrables attendus")
     objectifs: list[str] = Field(min_length=1)
     cibles: list[Cible] = Field(min_length=1)
     pays: str = Field(pattern=r"^[A-Z]{3}$")

@@ -113,6 +113,10 @@ class DemandeCroisement(BaseModel):
 class NouveauBrief(BaseModel):
     titre: str = Field(min_length=3, max_length=200)
     besoin: str = Field(min_length=3, max_length=2000)
+    antecedents: str = Field(default="", max_length=3000)
+    marche: str = Field(default="", max_length=5000)
+    produits: str = Field(default="", max_length=5000)
+    attentes: str = Field(default="", max_length=5000)
     objectifs: list[str] = Field(min_length=1, max_length=10)
     cibles: list[str] = Field(min_length=1, max_length=10)
     villes: list[str] = Field(min_length=1, max_length=20)
@@ -144,10 +148,15 @@ class Partage(BaseModel):
     partage_client: bool
 
 
+class ValidationProjet(BaseModel):
+    commentaire: str = Field(default="", max_length=2000)
+
+
 # ------------------------------------------------------------------------------------------------ outils
 def _moi(u: Utilisateur, o: Organisation, sw: SessionWeb) -> dict[str, Any]:
     return {"id": str(u.id), "nom": u.nom, "email": u.email, "role": u.role, "organisation": o.nom,
-            "organisation_type": o.type, "csrf": sw.csrf, "second_facteur_requis": u.role in securite.ROLES_USINE and not sw.second_facteur}
+            "organisation_type": o.type, "csrf": sw.csrf, "permissions": sorted(securite.permissions(u.role)),
+            "second_facteur_requis": u.role in securite.ROLES_USINE and not sw.second_facteur}
 
 
 def _projet(s: Session, ident: str) -> Projet:
@@ -390,6 +399,7 @@ def creer_app(cfg: Config) -> FastAPI:
             raise HTTPException(403, "seul l'administrateur du client dépose un brief")
         code = "BRIEF_" + uuid.uuid4().hex[:8].upper()
         brief = Brief.model_validate({"etude": code, "version": "01", "titre": d.titre, "besoin": d.besoin,
+                                      "antecedents": d.antecedents, "marche": d.marche, "produits": d.produits, "attentes": d.attentes,
                                       "client": {"raison_sociale": c.organisation.nom}, "objectifs": d.objectifs,
                                       "cibles": [{"code": k, "libelle": lib} for k, lib in enumerate(d.cibles, start=1)],
                                       "pays": "CMR", "villes": d.villes, "taille": d.taille, "debut": d.debut,
@@ -434,6 +444,36 @@ def creer_app(cfg: Config) -> FastAPI:
         noms = {o.id: o.nom for o in s.scalars(select(Organisation))}
         return [{"id": str(p.id), "code": p.code, "nom": p.nom, "statut": p.statut, "organisation": noms.get(p.organisation_id, "")}
                 for p in s.scalars(select(Projet).order_by(Projet.cree_le))]
+
+    @app.get("/api/cabinet/roles")
+    def cabinet_roles(c: Usine) -> list[dict[str, Any]]:
+        """Catalogue des rôles du cabinet et de leurs permissions métier."""
+        return [{"role": role, "permissions": sorted(perms)} for role, perms in securite.PERMISSIONS_PAR_ROLE.items()
+                if role.startswith("cabinet") or role.startswith("consultant") or role in {"expert_etude", "enqueteur"}]
+
+    @app.get("/api/cabinet/projets/{ident}/validation")
+    def cabinet_validation_lire(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        w = p.parametres.get("workflow", {})
+        return {"etape": w.get("etape", "junior"), "historique": w.get("historique", []), "statut": p.statut}
+
+    @app.post("/api/cabinet/projets/{ident}/validation")
+    def cabinet_validation(ident: str, d: ValidationProjet, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        role = c.utilisateur.role
+        courant = p.parametres.get("workflow", {}).get("etape", "junior")
+        transitions = {"consultant_junior": ("junior", "senior"), "consultant_senior": ("senior", "expert"),
+                       "expert_etude": ("expert", "livre"), "cabinet_admin": (courant, "livre"), "usine_admin": (courant, "livre")}
+        attendu = transitions.get(role)
+        if attendu is None or courant != attendu[0]:
+            raise HTTPException(403, f"validation impossible pour le rôle {role} à l'étape {courant}")
+        historique = list(p.parametres.get("workflow", {}).get("historique", []))
+        historique.append({"etape": attendu[1], "role": role, "utilisateur": c.utilisateur.nom, "commentaire": d.commentaire})
+        p.parametres = {**p.parametres, "workflow": {"etape": attendu[1], "historique": historique}}
+        if attendu[1] == "livre":
+            p.statut = "livre"
+        audit.journaliser(s, "validation_projet", p.code, {"de": courant, "vers": attendu[1], "role": role}, p.organisation_id, c.utilisateur.id)
+        return {"etape": attendu[1], "historique": historique, "statut": p.statut}
 
     @app.post("/api/usine/projets/{ident}/verifier")
     def usine_verifier(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:

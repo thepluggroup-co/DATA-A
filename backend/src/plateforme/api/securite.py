@@ -17,8 +17,25 @@ LONGUEUR_MIN = 12
 ECHECS_MAX = 5
 DUREE_BLOCAGE = timedelta(minutes=15)
 DUREE_SESSION = timedelta(hours=8)
-ROLES_USINE = {"usine_admin", "usine_operateur"}
+# Alias historique conservé pour les routes existantes. Le vocabulaire produit est « cabinet ».
+ROLES_CABINET = {"cabinet_admin", "cabinet_operateur", "consultant_junior", "consultant_senior", "expert_etude"}
+ROLES_USINE = {"usine_admin", "usine_operateur"} | ROLES_CABINET
 ROLES_CLIENT = {"client_admin", "client_lecteur"}
+ROLES_ENQUETEUR = {"enqueteur"}
+
+PERMISSIONS_PAR_ROLE: dict[str, frozenset[str]] = {
+    "cabinet_admin": frozenset({"equipe.lire", "equipe.ecrire", "projet.piloter", "terrain.deployer", "analyse.valider", "facturation.gerer"}),
+    "cabinet_operateur": frozenset({"equipe.lire", "projet.piloter", "terrain.deployer", "facturation.gerer"}),
+    "consultant_junior": frozenset({"projet.lire", "terrain.superviser", "qualite.signaler"}),
+    "consultant_senior": frozenset({"projet.lire", "terrain.superviser", "analyse.executer", "analyse.superviser", "qualite.valider"}),
+    "expert_etude": frozenset({"projet.lire", "analyse.programmer", "analyse.valider", "recommandations.ecrire", "livraison.valider"}),
+    "enqueteur": frozenset({"terrain.collecter", "formation.suivre"}),
+    "usine_admin": frozenset({"equipe.lire", "equipe.ecrire", "projet.piloter", "terrain.deployer", "analyse.valider", "facturation.gerer"}),
+    "usine_operateur": frozenset({"equipe.lire", "projet.piloter", "terrain.deployer", "facturation.gerer"}),
+}
+
+def permissions(role: str) -> frozenset[str]:
+    return PERMISSIONS_PAR_ROLE.get(role, frozenset())
 
 
 class MotDePasseFaible(ValueError):

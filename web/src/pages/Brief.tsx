@@ -10,6 +10,10 @@ const VILLES = [["DOUALA", "Douala"], ["YAOUNDE", "Yaoundé"], ["BAFOUSSAM", "Ba
 export function Brief(): ReactNode {
   const [titre, setTitre] = useState("");
   const [besoin, setBesoin] = useState("");
+  const [antecedents, setAntecedents] = useState("");
+  const [marche, setMarche] = useState("");
+  const [produits, setProduits] = useState("");
+  const [attentes, setAttentes] = useState("");
   const [objectifs, setObjectifs] = useState("");
   const [cibles, setCibles] = useState("");
   const [villes, setVilles] = useState<string[]>(["DOUALA", "YAOUNDE"]);
@@ -26,7 +30,7 @@ export function Brief(): ReactNode {
     setErreur("");
     try {
       const r = await api<{ code: string; pre_estimation: Pre }>("/api/projets/brief", { methode: "POST", corps: {
-        titre, besoin, objectifs: lignes(objectifs), cibles: lignes(cibles), villes, taille, debut, echeance } });
+        titre, besoin, antecedents, marche, produits, attentes, objectifs: lignes(objectifs), cibles: lignes(cibles), villes, taille, debut, echeance } });
       setPre(r.pre_estimation);
       setEnvoye(r.code);
     } catch (err) {
@@ -53,6 +57,14 @@ export function Brief(): ReactNode {
           <input id="titre" value={titre} onChange={(e) => setTitre(e.target.value)} required minLength={3} />
           <label htmlFor="besoin">Besoin d'information</label>
           <textarea id="besoin" rows={3} value={besoin} onChange={(e) => setBesoin(e.target.value)} required />
+          <label htmlFor="antecedents">Antécédents et contexte</label>
+          <textarea id="antecedents" rows={3} value={antecedents} onChange={(e) => setAntecedents(e.target.value)} placeholder="Étude précédente, business plan, financement, formation…" />
+          <label htmlFor="marche">Description du marché</label>
+          <textarea id="marche" rows={4} value={marche} onChange={(e) => setMarche(e.target.value)} placeholder="Marché visé, zones, concurrents, tendances, contraintes…" required />
+          <label htmlFor="produits">Produits ou services</label>
+          <textarea id="produits" rows={3} value={produits} onChange={(e) => setProduits(e.target.value)} placeholder="Offre, usages, prix, proposition de valeur…" required />
+          <label htmlFor="attentes">Résultats et projections attendus</label>
+          <textarea id="attentes" rows={3} value={attentes} onChange={(e) => setAttentes(e.target.value)} placeholder="Décisions à prendre, scénarios, indicateurs, livrables…" required />
           <label htmlFor="objectifs">Objectifs (un par ligne)</label>
           <textarea id="objectifs" rows={3} value={objectifs} onChange={(e) => setObjectifs(e.target.value)} required />
           <label htmlFor="cibles">Cibles (une par ligne)</label>

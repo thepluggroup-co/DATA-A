@@ -3,6 +3,7 @@
 export type Moi = {
   id: string; nom: string; email: string; role: string; organisation: string; organisation_type: string;
   csrf: string; second_facteur_requis: boolean;
+  permissions?: string[];
 };
 
 let csrf = "";

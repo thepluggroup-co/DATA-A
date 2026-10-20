@@ -11,6 +11,7 @@ export function Connexion(): ReactNode {
   const [code, setCode] = useState("");
   const [erreur, setErreur] = useState("");
   const [occupe, setOccupe] = useState(false);
+  const [voirMdp, setVoirMdp] = useState(false);
   const etapeTotp = !!moi && moi.second_facteur_requis;
 
   const suite = (m: Moi): void => {
@@ -63,7 +64,11 @@ export function Connexion(): ReactNode {
               <label htmlFor="email">Adresse e-mail</label>
               <input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
               <label htmlFor="mdp">Mot de passe</label>
-              <input id="mdp" type="password" autoComplete="current-password" value={mdp} onChange={(e) => setMdp(e.target.value)} required />
+              <div className="champ-secret">
+                <input id="mdp" type={voirMdp ? "text" : "password"} autoComplete="current-password" value={mdp} onChange={(e) => setMdp(e.target.value)} required />
+                <button type="button" className="secondaire" onClick={() => setVoirMdp((v) => !v)} aria-label={voirMdp ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{voirMdp ? "Masquer" : "Afficher"}</button>
+              </div>
+              <span className="mention">Utilisez l’adresse e-mail créée par l’administrateur DATA’A.</span>
               <span />
               <button type="submit" disabled={occupe}>Se connecter</button>
             </form>

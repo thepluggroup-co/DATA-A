@@ -10,17 +10,22 @@ import { UsineProjets } from "./pages/UsineProjets";
 import { UsineClients } from "./pages/UsineClients";
 import { UsineFactures } from "./pages/UsineFactures";
 import { UsineAudit } from "./pages/UsineAudit";
+import { UsineOperations } from "./pages/UsineOperations";
+import { UsineConnexions } from "./pages/UsineConnexions";
 
 type Session = { moi: Moi | null; definir: (m: Moi | null) => void };
 const ContexteSession = createContext<Session>({ moi: null, definir: () => undefined });
 export const useSession = (): Session => useContext(ContexteSession);
-export const estUsine = (m: Moi | null): boolean => !!m && m.role.startsWith("usine") && !m.second_facteur_requis;
+export const estCabinet = (m: Moi | null): boolean => !!m && (m.role.startsWith("usine") || m.role.startsWith("cabinet") || m.role.startsWith("consultant") || m.role === "expert_etude") && !m.second_facteur_requis;
+export const estUsine = estCabinet;
 
 const MODULES_CLIENT = [
   { vers: "/", nom: "Mes études", icone: "tableau", fin: true },
   { vers: "/brief", nom: "Nouveau brief", icone: "brief" },
 ];
 const MODULES_USINE = [
+  { vers: "/usine/operations", nom: "Centre opérations", icone: "tableau" },
+  { vers: "/usine/connexions", nom: "Connexions", icone: "bouclier" },
   { vers: "/usine", nom: "Projets", icone: "projets", fin: true },
   { vers: "/usine/clients", nom: "Clients", icone: "clients" },
   { vers: "/usine/factures", nom: "Facturation", icone: "facture" },
@@ -54,7 +59,7 @@ function Coquille({ moi, enfants }: { moi: Moi; enfants: ReactNode }): ReactNode
       <aside className="laterale">
         <div className="marque">
           <span className="puce-logo"><img src="/logo_data_a.png" alt="DATA'A" /></span>
-          <div><small>{usine ? "Console usine" : "Espace client"}</small></div>
+          <div><small>{usine ? "Console cabinet" : "Espace client"}</small></div>
         </div>
         <div className="espace">{usine ? "Pilotage" : "Mes données"}</div>
         <nav aria-label="Navigation principale">
@@ -71,10 +76,10 @@ function Coquille({ moi, enfants }: { moi: Moi; enfants: ReactNode }): ReactNode
       </aside>
       <div className="principal">
         <header className="barre-haute">
-          <span className="fil">DATA'A <span aria-hidden="true">›</span> {usine ? "Usine" : moi.organisation} <span aria-hidden="true">›</span> <strong>{titre}</strong></span>
+          <span className="fil">DATA'A <span aria-hidden="true">›</span> {usine ? "Cabinet" : moi.organisation} <span aria-hidden="true">›</span> <strong>{titre}</strong></span>
           <div className="droite">
             <Horloge />
-            <span className="chip-role">{usine ? "Usine · 2FA" : moi.role === "client_admin" ? "Administrateur" : "Lecteur"}</span>
+            <span className="chip-role">{usine ? ({ cabinet_admin: "Cabinet · admin", cabinet_operateur: "Cabinet · opérateur", consultant_junior: "Consultant junior", consultant_senior: "Consultant senior", expert_etude: "Expert étude", enqueteur: "Enquêteur", usine_admin: "Cabinet · admin", usine_operateur: "Cabinet · opérateur" } as Record<string, string>)[moi.role] ?? "Cabinet" : moi.role === "client_admin" ? "Administrateur" : "Lecteur"}</span>
           </div>
         </header>
         <main>{enfants}</main>
@@ -110,6 +115,8 @@ export function Application(): ReactNode {
         <Route path="/projets/:id" element={<Protege enfants={<ClientProjet />} />} />
         <Route path="/brief" element={<Protege enfants={<Brief />} />} />
         <Route path="/usine" element={<Protege usine enfants={<UsineProjets />} />} />
+        <Route path="/usine/operations" element={<Protege usine enfants={<UsineOperations />} />} />
+        <Route path="/usine/connexions" element={<Protege usine enfants={<UsineConnexions />} />} />
         <Route path="/usine/clients" element={<Protege usine enfants={<UsineClients />} />} />
         <Route path="/usine/factures" element={<Protege usine enfants={<UsineFactures />} />} />
         <Route path="/usine/audit" element={<Protege usine enfants={<UsineAudit />} />} />

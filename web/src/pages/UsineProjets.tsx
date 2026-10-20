@@ -6,6 +6,7 @@ type Projet = { id: string; code: string; nom: string; statut: string; organisat
 type Livrable = { id: string; nom: string; partage_client: boolean };
 type Mission = { id: string; enqueteur: string; actif: boolean; fiches: number };
 type Organisation = { id: string; nom: string; type: string };
+type Workflow = { etape: string; statut: string; historique: { etape: string; role: string; utilisateur: string }[] };
 
 function Missions({ p }: { p: Projet }): ReactNode {
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -62,8 +63,9 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
   const [ecarts, setEcarts] = useState<string[]>([]);
   const [livrables, setLivrables] = useState<Livrable[]>([]);
   const [occupe, setOccupe] = useState(false);
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const charger = (): void => { api<Livrable[]>(`/api/projets/${p.id}/livrables`).then(setLivrables).catch(() => setLivrables([])); };
-  useEffect(charger, [p.id]);
+  useEffect(() => { charger(); api<Workflow>(`/api/cabinet/projets/${p.id}/validation`).then(setWorkflow).catch(() => undefined); }, [p.id]);
   const action = async (quoi: "verifier" | "documents"): Promise<void> => {
     setOccupe(true);
     setMessage(null);
@@ -88,6 +90,10 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
     await api(`/api/usine/livrables/${l.id}`, { methode: "PATCH", corps: { partage_client: !l.partage_client } });
     charger();
   };
+  const valider = async (): Promise<void> => {
+    try { const r = await api<Workflow>(`/api/cabinet/projets/${p.id}/validation`, { methode: "POST", corps: {} }); setWorkflow(r); setMessage({ ok: true, texte: `Étape validée : ${r.etape}.` }); }
+    catch (err) { setMessage({ ok: false, texte: (err as Error).message }); }
+  };
   const partages = livrables.filter((l) => l.partage_client).length;
   return (
     <div className="panneau" aria-label={`Projet ${p.code}`}>
@@ -104,6 +110,7 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
       {occupe && <p role="status" className="mention">Traitement en cours…</p>}
       {message && <p className={message.ok ? "succes" : "erreur"} role="status">{message.texte}</p>}
       {ecarts.length > 0 && <ul>{ecarts.map((e, k) => <li key={k}>{e}</li>)}</ul>}
+      {workflow && <div className="lecture actions"><strong>Workflow : {workflow.etape}</strong><span className="mention">{workflow.historique.length} validation(s) enregistrée(s)</span><button className="secondaire" onClick={() => void valider()}>Valider l’étape</button></div>}
       <div className="grille-2">
         <section aria-label="Livrables">
           <h2>Livrables ({partages} partagé{partages > 1 ? "s" : ""} / {livrables.length})</h2>
@@ -132,12 +139,24 @@ export function UsineProjets(): ReactNode {
   const [orgs, setOrgs] = useState<Organisation[]>([]);
   const [choisi, setChoisi] = useState<Projet | null>(null);
   const [erreur, setErreur] = useState("");
-  useEffect(() => {
+  const [recherche, setRecherche] = useState("");
+  const [filtreStatut, setFiltreStatut] = useState("tous");
+  const [chargement, setChargement] = useState(false);
+  const charger = (): void => {
+    setChargement(true);
     Promise.all([api<Projet[]>("/api/usine/projets"), api<Organisation[]>("/api/usine/organisations")])
-      .then(([p, o]) => { setProjets(p); setOrgs(o); })
-      .catch((e: Error) => setErreur(e.message));
+      .then(([p, o]) => { setProjets(p); setOrgs(o); setErreur(""); })
+      .catch((e: Error) => setErreur(e.message))
+      .finally(() => setChargement(false));
+  };
+  useEffect(() => {
+    charger();
   }, []);
   const parStatut = (s: string): number => projets.filter((p) => p.statut === s).length;
+  const visibles = projets.filter((p) => {
+    const texte = `${p.nom} ${p.code} ${p.organisation}`.toLocaleLowerCase();
+    return texte.includes(recherche.toLocaleLowerCase()) && (filtreStatut === "tous" || p.statut === filtreStatut);
+  });
   return (
     <>
       <EnTete titre="File des projets" sous_titre="Pilotage des études : cohérence des sources, documents, terrain et livraison." />
@@ -148,10 +167,20 @@ export function UsineProjets(): ReactNode {
         <Kpi icone="fiches" etiquette="En préparation" valeur={parStatut("documents")} detail="documents générés" />
         <Kpi icone="clients" etiquette="Clients" valeur={orgs.filter((o) => o.type === "client").length} detail="organisations actives" />
       </div>
+      <div className="panneau barre-outils" aria-label="Filtres des projets">
+        <label htmlFor="recherche-projets">Rechercher</label>
+        <input id="recherche-projets" value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Client, étude ou code…" />
+        <label htmlFor="filtre-statut">Statut</label>
+        <select id="filtre-statut" value={filtreStatut} onChange={(e) => setFiltreStatut(e.target.value)}>
+          <option value="tous">Tous les statuts</option><option value="brief">Brief déposé</option><option value="documents">Préparation</option>
+          <option value="terrain">Terrain en cours</option><option value="livre">Livrée</option>
+        </select>
+        <button className="secondaire" onClick={charger} disabled={chargement}>{chargement ? "Actualisation…" : "Actualiser"}</button>
+      </div>
       <div className="tableau">
         <table aria-label="File des projets">
           <thead><tr><th>Client</th><th>Projet</th><th>Code</th><th>Statut</th><th /></tr></thead>
-          <tbody>{projets.map((p) => (
+          <tbody>{visibles.length === 0 && <tr><td colSpan={5} className="vide">Aucun projet ne correspond aux filtres.</td></tr>}{visibles.map((p) => (
             <tr key={p.id} style={choisi?.id === p.id ? { background: "rgba(21,234,224,0.06)" } : undefined}>
               <td>{p.organisation}</td><td>{p.nom}</td><td><code>{p.code}</code></td><td><StatutProjet statut={p.statut} /></td>
               <td><button className="secondaire" aria-label={`Ouvrir ${p.code}`} onClick={() => setChoisi(p)}>Ouvrir</button></td></tr>))}
