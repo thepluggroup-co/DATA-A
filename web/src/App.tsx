@@ -55,6 +55,9 @@ const MODULES_USINE = [
   { vers: "/usine/audit", nom: "Journal d'audit", icone: "audit" },
 ];
 const SOUS_ONGLETS: Record<string, { vers: string; nom: string }[]> = {
+  "/usine/operations": [{ vers: "/usine/operations", nom: "Vue générale" }, { vers: "/usine/supervision", nom: "Activité" }, { vers: "/usine/notifications", nom: "Alertes" }],
+  "/usine/parametrage": [{ vers: "/usine/parametrage", nom: "Paramètres" }, { vers: "/usine/connexions", nom: "Connexions" }],
+  "/usine/connexions": [{ vers: "/usine/connexions", nom: "Connecteurs" }, { vers: "/usine/parametrage", nom: "Paramètres" }],
   "/usine/analyses": [{ vers: "/usine/analyses", nom: "Validation" }, { vers: "/usine/recommandations", nom: "Recommandations" }],
   "/usine/formulaire": [{ vers: "/usine/formulaire", nom: "Questions" }, { vers: "/usine/echantillonnage", nom: "Échantillon" }],
   "/usine/terrain": [{ vers: "/usine/terrain", nom: "Collecte" }, { vers: "/usine/supervision", nom: "Supervision" }, { vers: "/usine/formation", nom: "Formation" }],

@@ -56,10 +56,10 @@ a:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--turquoise); outline-offset: 2px; border-radius: 6px; }
 
 /* ---------------------------------------------------------------- coquille ERP */
-.coquille { display: grid; grid-template-columns: var(--barre) 1fr; min-height: 100vh; }
+.coquille { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: 100vh; }
 .laterale {
   position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 1rem;
-  padding: 1.1rem 0.9rem; background: linear-gradient(180deg, rgba(7, 20, 49, 0.92), rgba(4, 10, 24, 0.96));
+  padding: 1.1rem 0.75rem; background: linear-gradient(180deg, rgba(7, 20, 49, 0.98), rgba(4, 10, 24, 0.98));
   border-right: 1px solid var(--bord); backdrop-filter: blur(14px);
 }
 .marque { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.45rem; }
@@ -69,7 +69,7 @@ a:hover { text-decoration: underline; }
 .espace { font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--texte-3); margin: 0.6rem 0.6rem 0.2rem; }
 .laterale nav { display: flex; flex-direction: column; gap: 0.2rem; align-items: stretch; text-align: left; }
 .laterale nav a {
-  display: flex; align-items: center; gap: 0.7rem; padding: 0.6rem 0.75rem; border-radius: 10px; color: var(--texte-2);
+  display: flex; align-items: center; gap: 0.7rem; width: 100%; box-sizing: border-box; padding: 0.7rem 0.75rem; border-radius: 8px; color: var(--texte-2);
   font-weight: 600; border: 1px solid transparent; transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .laterale nav a:hover { background: rgba(21, 171, 220, 0.08); color: var(--texte); text-decoration: none; }
@@ -90,7 +90,7 @@ a:hover { text-decoration: underline; }
   position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 1rem; padding: 0.85rem 1.75rem;
   background: rgba(4, 10, 24, 0.72); border-bottom: 1px solid var(--bord); backdrop-filter: blur(14px);
 }
-.sous-onglets { display: flex; gap: .25rem; align-items: center; padding: .65rem 1.75rem 0; border-bottom: 1px solid var(--bord); overflow-x: auto; }
+.sous-onglets { display: flex; gap: .25rem; align-items: center; min-height: 3.1rem; padding: .35rem 1.75rem 0; border-bottom: 1px solid var(--bord); background: var(--fond-2); overflow-x: auto; }
 .sous-onglets a { padding: .55rem .9rem; color: var(--texte-2); font-weight: 600; border-bottom: 2px solid transparent; white-space: nowrap; }
 .sous-onglets a:hover { color: var(--texte); text-decoration: none; }
 .sous-onglets a.active { color: var(--accent, var(--ciel)); border-bottom-color: var(--accent, var(--ciel)); }
