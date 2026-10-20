@@ -23,7 +23,10 @@ export async function api<T>(chemin: string, options: { methode?: string; corps?
     body: options.corps === undefined ? undefined : JSON.stringify(options.corps),
   });
   const texte = await r.text();
-  const donnees = texte ? JSON.parse(texte) : null;
+  let donnees: any = null;
+  if (texte) {
+    try { donnees = JSON.parse(texte); } catch { donnees = { detail: texte.slice(0, 300) }; }
+  }
   if (!r.ok) {
     const message = donnees?.motif ?? donnees?.detail ?? `erreur ${r.status}`;
     throw new ErreurApi(r.status, typeof message === "string" ? message : JSON.stringify(message), donnees);

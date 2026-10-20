@@ -1,0 +1,119 @@
+:host([hidden]) {
+    display: none;
+}
+:host {
+    display: inline;
+}
+
+:host {
+    --font-weight-bold: var(--fontWeightBold);
+    --font-weight-medium: var(--fontWeightMedium);
+    --font-weight-regular: var(--smtc-text-style-default-regular-weight);
+    --font-weight-semibold: var(--fontWeightSemibold);
+    --font-family-monospace: var(--fontFamilyMonospace);
+    --font-family-numeric: var(--fontFamilyNumeric);
+    --mai-smtc-numeric-fallback:
+        Bahnschrift, "Segoe UI", "Segoe UI Web (West European)", -apple-system,
+        BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+
+    contain: content;
+    font-family: var(--smtc-text-style-default-regular-font-family);
+    font-size: var(--smtc-text-global-body3-font-size);
+    line-height: var(--smtc-text-global-body3-line-height);
+    font-weight: var(--smtc-text-style-default-regular-weight);
+    text-align: start;
+}
+
+:host([nowrap]),
+:host([nowrap]) ::slotted(*) {
+    white-space: nowrap;
+    overflow: hidden;
+}
+:host([truncate]),
+:host([truncate]) ::slotted(*) {
+    text-overflow: ellipsis;
+}
+:host([block]) {
+    display: block;
+}
+:host([italic]) {
+    font-style: italic;
+}
+:host([underline]) {
+    text-decoration-line: underline;
+}
+:host([strikethrough]) {
+    text-decoration-line: line-through;
+}
+:host([underline][strikethrough]) {
+    text-decoration-line: line-through underline;
+}
+:host([size="100"]) {
+    font-size: var(--smtc-text-global-caption2-font-size);
+    line-height: var(--smtc-text-global-caption2-line-height);
+}
+:host([size="200"]) {
+    font-size: var(--smtc-text-global-caption1-font-size);
+    line-height: var(--smtc-text-global-caption1-line-height);
+}
+:host([size="400"]) {
+    font-size: var(--smtc-text-global-body2-font-size);
+    line-height: var(--smtc-text-global-body2-line-height);
+}
+:host([size="500"]) {
+    font-size: var(--smtc-text-global-body1-font-size);
+    line-height: var(--smtc-text-global-body1-line-height);
+}
+:host([size="600"]) {
+    font-size: var(--smtc-text-global-subtitle1-font-size);
+    line-height: var(--smtc-text-global-subtitle1-line-height);
+}
+:host([size="700"]) {
+    font-size: var(--smtc-text-global-title2-font-size);
+    line-height: var(--smtc-text-global-title2-line-height);
+}
+:host([size="800"]) {
+    font-size: var(--smtc-text-global-title1-font-size);
+    line-height: var(--smtc-text-global-title1-line-height);
+}
+:host([size="900"]) {
+    font-size: var(--smtc-text-global-display2-font-size);
+    line-height: var(--smtc-text-global-display2-line-height);
+}
+:host([size="1000"]) {
+    font-size: var(--smtc-text-global-display1-font-size);
+    line-height: var(--smtc-text-global-display1-line-height);
+}
+:host([font="monospace"]) {
+    font-family: var(--font-family-monospace, monospace);
+}
+:host([font="numeric"]) {
+    font-family: var(--font-family-numeric, var(--mai-smtc-numeric-fallback));
+}
+:host([weight="medium"]) {
+    font-weight: var(--font-weight-medium, 500);
+}
+:host([weight="semibold"]) {
+    font-weight: var(--font-weight-semibold, 550);
+}
+:host([weight="bold"]) {
+    font-weight: var(--font-weight-semibold, 600);
+}
+:host([align="center"]) {
+    text-align: center;
+}
+:host([align="end"]) {
+    text-align: end;
+}
+:host([align="justify"]) {
+    text-align: justify;
+}
+
+::slotted(*) {
+    font: inherit;
+    line-height: inherit;
+    text-decoration-line: inherit;
+    text-align: inherit;
+    text-decoration-line: inherit;
+    margin: 0;
+}

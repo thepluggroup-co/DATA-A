@@ -1,0 +1,175 @@
+:host([hidden]) {
+    display: none;
+}
+:host {
+    display: inline-flex;
+}
+
+:host {
+    --_squircle-modifier: 1;
+    corner-shape: squircle;
+    width: 100%;
+    align-items: center;
+    contain: content;
+    overflow-x: hidden;
+    position: relative;
+    min-height: var(
+        --smtc-ctrl-progress-height-empty,
+        var(--smtc-ctrl-progress-height-filled)
+    );
+    border-radius: calc(
+        var(--smtc-ctrl-progress-corner, var(--smtc-corner-circular)) *
+            var(--_squircle-modifier)
+    );
+
+    @supports (width: attr(value type(<number>))) {
+        --max: attr(max type(<number>), 100);
+        --min: attr(min type(<number>), 0);
+        --value: attr(value type(<number>), 0);
+        --indicator-width: clamp(
+            0%,
+            calc(
+                (var(--value) - var(--min)) / (var(--max) - var(--min)) * 100%
+            ),
+            100%
+        );
+    }
+}
+
+:host::before {
+    content: "";
+    position: absolute;
+    height: var(
+        --smtc-ctrl-progress-height-empty,
+        var(--smtc-ctrl-progress-height-filled)
+    );
+    inset-inline: 0;
+    background-color: var(--smtc-ctrl-progress-background-empty);
+    border-radius: inherit;
+}
+
+.indicator {
+    background-color: var(
+        --smtc-ctrl-progress-background-filled,
+        var(--smtc-background-ctrl-brand-rest)
+    );
+    border-radius: inherit;
+    height: var(--smtc-ctrl-progress-height-filled);
+    z-index: 1;
+}
+
+:host([thickness="small"]) {
+    min-height: var(
+        --smtc-ctrl-progress-sm-height-empty,
+        var(--smtc-ctrl-progress-sm-height-filled)
+    );
+}
+
+:host([thickness="small"])::before {
+    height: var(
+        --smtc-ctrl-progress-sm-height-empty,
+        var(--smtc-ctrl-progress-sm-height-filled)
+    );
+}
+
+:host([thickness="small"]) .indicator {
+    height: var(--smtc-ctrl-progress-sm-height-filled);
+}
+
+:host([thickness="large"]) {
+    min-height: var(
+        --smtc-ctrl-progress-lg-height-empty,
+        var(--smtc-ctrl-progress-lg-height-filled)
+    );
+}
+
+:host([thickness="large"])::before {
+    height: var(
+        --smtc-ctrl-progress-lg-height-empty,
+        var(--smtc-ctrl-progress-lg-height-filled)
+    );
+}
+
+:host([thickness="large"]) .indicator {
+    height: var(--smtc-ctrl-progress-lg-height-filled);
+}
+
+:host([value]) .indicator {
+    transition: all 0.2s ease-in-out;
+
+    @supports (width: attr(value type(<number>))) {
+        width: var(--indicator-width);
+    }
+}
+
+:host(:not([value])) .indicator {
+    position: relative;
+    width: 33%;
+    background-image: linear-gradient(
+        to right,
+        var(--smtc-ctrl-progress-background-empty) 0%,
+        var(--smtc-null-color) 50%,
+        var(--smtc-ctrl-progress-background-empty) 100%
+    );
+    animation-name: indeterminate;
+    animation-duration: 3s;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+}
+
+:host([validation-state="error"]) .indicator {
+    background-color: var(--smtc-status-danger-background);
+}
+
+:host([validation-state="warning"]) .indicator {
+    background-color: var(--smtc-status-warning-background);
+}
+
+:host([validation-state="success"]) .indicator {
+    background-color: var(--smtc-status-success-background);
+}
+
+@supports (corner-shape: squircle) {
+    :host {
+        --_squircle-modifier: 1.8;
+    }
+}
+
+@layer animations {
+    /* Disable animations for reduced motion */
+    @media (prefers-reduced-motion: no-preference) {
+        :host([value]) {
+            transition: none;
+        }
+        :host(:not([value])) .indicator {
+            animation-duration: 0.01ms;
+            animation-iteration-count: 1;
+        }
+    }
+}
+
+@keyframes indeterminate {
+    0% {
+        inset-inline-start: -33%;
+    }
+    100% {
+        inset-inline-start: 100%;
+    }
+}
+
+@media (forced-colors: active) {
+    :host::before {
+        background-color: CanvasText;
+    }
+    .indicator,
+    :host(
+            :is(
+                [validation-state="success"],
+                [validation-state="warning"],
+                [validation-state="error"]
+            )
+        )
+        .indicator {
+        background-color: Highlight;
+    }
+}

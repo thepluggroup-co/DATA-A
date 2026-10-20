@@ -1,0 +1,724 @@
+:host([hidden]) {
+    display: none;
+}
+:host {
+    display: inline-flex;
+}
+
+:host {
+    position: relative;
+    contain: layout style;
+    vertical-align: middle;
+    align-items: center;
+    box-sizing: border-box;
+    gap: var(--smtc-gap-inside-ctrl-default);
+    justify-content: center;
+    text-align: center;
+    text-decoration-line: none;
+    margin: 0;
+    min-height: var(--smtc-size-ctrl-default);
+    outline-style: none;
+    background-color: var(--smtc-background-ctrl-neutral-rest);
+    color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+    border: var(--smtc-stroke-width-default) solid
+        var(--smtc-stroke-ctrl-on-neutral-rest, var(--smtc-null-color));
+    padding: 0 var(--smtc-padding-ctrl-horizontal-default);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier)
+    );
+    corner-shape: squircle;
+    font-size: var(
+        --smtc-text-ramp-item-body-font-size,
+        var(--smtc-text-global-body3-font-size)
+    );
+    font-family: var(--smtc-text-style-default-regular-font-family);
+    font-weight: var(
+        --smtc-text-ctrl-button-weight-default,
+        var(--smtc-text-style-default-regular-weight)
+    );
+    line-height: var(
+        --smtc-text-ramp-item-body-line-height,
+        var(--smtc-text-global-body3-line-height)
+    );
+    /* TODO: Need tokens */
+    transition-duration: 100ms;
+    transition-property: background, color;
+    /* TODO: Need tokens */
+    transition-timing-function: linear;
+    cursor: pointer;
+    user-select: none;
+    box-shadow:
+        var(--mai-smtc-shadow-ctrl-neutral-inner-shine) inset,
+        var(--mai-smtc-shadow-ctrl-neutral-key),
+        var(--mai-smtc-shadow-ctrl-neutral-contour);
+    --_squircle-modifier: 1;
+}
+
+:host([icon-only]) {
+    padding: 0 var(--smtc-padding-ctrl-horizontal-icon-only);
+}
+
+:host([icon-only][size="small"]) {
+    padding: 0 var(--smtc-padding-ctrl-sm-horizontal-icon-only);
+}
+
+:host([icon-only][size="large"]) {
+    padding: 0 var(--smtc-padding-ctrl-lg-horizontal-icon-only);
+}
+
+.content {
+    display: grid;
+    padding: calc(
+            var(--smtc-padding-ctrl-text-top) - var(--smtc-stroke-width-default)
+        )
+        var(--smtc-padding-ctrl-text-side)
+        calc(
+            var(
+                    --smtc-padding-ctrl-text-bottom,
+                    var(--smtc-padding-ctrl-text-top)
+                ) -
+                var(--smtc-stroke-width-default)
+        );
+    place-content: center;
+}
+
+:host([size="small"]) .content {
+    padding: calc(
+            var(--smtc-padding-ctrl-sm-text-top) -
+                var(--smtc-stroke-width-default)
+        )
+        var(--smtc-padding-ctrl-text-side)
+        calc(
+            var(
+                    --smtc-padding-ctrl-sm-text-bottom,
+                    var(--smtc-padding-ctrl-sm-text-top)
+                ) -
+                var(--smtc-stroke-width-default)
+        );
+}
+
+:host([size="large"]) .content {
+    padding: calc(
+            var(--smtc-padding-ctrl-lg-text-top) -
+                var(--smtc-stroke-width-default)
+        )
+        var(--smtc-padding-ctrl-text-side)
+        calc(
+            var(
+                    --smtc-padding-ctrl-lg-text-bottom,
+                    var(--smtc-padding-ctrl-lg-text-top)
+                ) -
+                var(--smtc-stroke-width-default)
+        );
+}
+
+:host([icon-only]) .content {
+    padding: 0;
+}
+
+:host(:hover) {
+    background-color: var(--smtc-background-ctrl-neutral-hover);
+    color: var(
+        --smtc-foreground-ctrl-neutral-primary-hover,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    border-radius: calc(
+        var(--smtc-corner-ctrl-hover, var(--smtc-corner-ctrl-rest)) *
+            var(--_squircle-modifier)
+    );
+}
+
+:host(:hover:active) {
+    background-color: var(--smtc-background-ctrl-neutral-pressed);
+    color: var(
+        --smtc-foreground-ctrl-neutral-primary-pressed,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    border-radius: calc(
+        var(--smtc-corner-ctrl-pressed, var(--smtc-corner-ctrl-rest)) *
+            var(--_squircle-modifier)
+    );
+    outline-style: none;
+}
+
+:host(:focus-visible) {
+    border-color: var(--smtc-null-color);
+    box-shadow: 0 0 0
+        var(
+            --smtc-ctrl-focus-inner-stroke-width,
+            var(--smtc-stroke-width-default)
+        )
+        var(--smtc-ctrl-focus-inner-stroke);
+    outline: var(--smtc-ctrl-focus-outer-stroke-width) solid
+        var(
+            --smtc-ctrl-focus-outer-stroke,
+            var(--smtc-background-ctrl-brand-rest)
+        );
+    outline-offset: var(
+        --smtc-ctrl-focus-inner-stroke-width,
+        var(--smtc-stroke-width-default)
+    );
+}
+
+@supports (corner-shape: squircle) {
+    :host {
+        --_squircle-modifier: 1.8;
+    }
+}
+
+@media screen and (prefers-reduced-motion: reduce) {
+    :host {
+        transition-duration: 0.01ms;
+    }
+}
+
+[slot="end"],
+::slotted([slot="end"]) {
+    flex-shrink: 0;
+}
+
+::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    font-size: var(--smtc-size-ctrl-icon);
+    height: var(--smtc-size-ctrl-icon);
+    width: var(--smtc-size-ctrl-icon);
+}
+
+:host([icon-only]) {
+    width: var(--smtc-size-ctrl-default);
+}
+
+:host([size="small"]) {
+    min-height: var(--smtc-size-ctrl-sm-default);
+    padding: 0 var(--smtc-padding-ctrl-sm-horizontal-default);
+    font-size: var(
+        --smtc-text-ramp-sm-item-body-font-size,
+        var(--smtc-text-global-caption1-font-size)
+    );
+    line-height: var(
+        --smtc-text-ramp-sm-item-body-line-height,
+        var(--smtc-text-global-caption1-line-height)
+    );
+    gap: var(--smtc-gap-inside-ctrl-sm-default);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-sm-rest) * var(--_squircle-modifier)
+    );
+}
+
+:host([size="small"]:hover) {
+    border-radius: calc(
+        var(--smtc-corner-ctrl-sm-hover, var(--smtc-corner-ctrl-sm-rest)) *
+            var(--_squircle-modifier)
+    );
+}
+
+:host([size="small"]:active) {
+    border-radius: calc(
+        var(--smtc-corner-ctrl-sm-pressed, var(--smtc-corner-ctrl-sm-rest)) *
+            var(--_squircle-modifier)
+    );
+}
+
+:host([size="small"][icon-only]) {
+    width: var(--smtc-size-ctrl-sm-default);
+}
+
+:host([size="small"]) ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    font-size: var(--smtc-size-ctrl-sm-icon);
+    height: var(--smtc-size-ctrl-sm-icon);
+    width: var(--smtc-size-ctrl-sm-icon);
+}
+
+:host([size="large"]) {
+    min-height: var(--smtc-size-ctrl-lg-default);
+    padding: 0 var(--smtc-padding-ctrl-lg-horizontal-default);
+    font-size: var(
+        --smtc-text-ramp-lg-item-body-font-size,
+        var(--smtc-text-global-body2-font-size)
+    );
+    line-height: var(
+        --smtc-text-ramp-lg-item-body-line-height,
+        var(--smtc-text-global-body2-line-height)
+    );
+    gap: var(--smtc-gap-inside-ctrl-lg-default);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-lg-rest) * var(--_squircle-modifier)
+    );
+}
+
+:host([size="large"]:hover) {
+    border-radius: calc(
+        var(--smtc-corner-ctrl-lg-hover, var(--smtc-corner-ctrl-lg-rest)) *
+            var(--_squircle-modifier)
+    );
+}
+
+:host([size="large"]:active) {
+    border-radius: calc(
+        var(--smtc-corner-ctrl-lg-pressed, var(--smtc-corner-ctrl-lg-rest)) *
+            var(--_squircle-modifier)
+    );
+}
+
+:host([size="large"][icon-only]) {
+    width: var(--smtc-size-ctrl-lg-default);
+}
+
+:host([size="large"]) ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    font-size: var(--smtc-size-ctrl-lg-icon);
+    height: var(--smtc-size-ctrl-lg-icon);
+    width: var(--smtc-size-ctrl-lg-icon);
+}
+
+:host([appearance="primary"]) {
+    background-color: var(--smtc-background-ctrl-brand-rest);
+    color: var(--smtc-foreground-ctrl-on-brand-rest);
+    border-color: transparent;
+    box-shadow: var(--mai-smtc-shadow-ctrl-brand-key);
+}
+
+:host([appearance="primary"]:hover) {
+    background-color: var(--smtc-background-ctrl-brand-hover);
+    color: var(
+        --smtc-foreground-ctrl-on-brand-hover,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+}
+
+:host([appearance="primary"]:hover:active) {
+    border-color: transparent;
+    background-color: var(--smtc-background-ctrl-brand-pressed);
+    color: var(
+        --smtc-foreground-ctrl-on-brand-pressed,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+}
+
+:host([appearance="primary"]:focus-visible) {
+    border-color: var(--smtc-foreground-ctrl-on-brand-rest);
+}
+
+:host([appearance="onimage"]) {
+    background-color: var(--mai-smtc-background-ctrl-on-image-rest);
+    color: var(
+        --mai-smtc-foreground-ctrl-on-image,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+    box-shadow: unset;
+    border-color: transparent;
+}
+
+:host([appearance="onimage"]:hover) {
+    background-color: var(
+        --mai-smtc-background-ctrl-on-image-hover,
+        var(--mai-smtc-background-ctrl-on-image-rest)
+    );
+    color: var(
+        --mai-smtc-foreground-ctrl-on-image,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+}
+
+:host([appearance="onimage"]:hover:active) {
+    border-color: transparent;
+    color: var(
+        --mai-smtc-foreground-ctrl-on-image,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+    background-color: var(--mai-smtc-background-ctrl-on-image-pressed);
+}
+
+:host([appearance="onimage"]:focus-visible) {
+    border-color: var(--smtc-foreground-ctrl-on-brand-rest);
+}
+
+:host([appearance="outline"]) {
+    background-color: var(
+        --smtc-background-ctrl-outline-rest,
+        var(--smtc-null-color)
+    );
+    border: none;
+    color: var(
+        --smtc-foreground-ctrl-on-outline-rest,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    box-shadow: unset;
+}
+
+:host([appearance="outline"])::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    border-radius: inherit;
+    corner-shape: squircle;
+    border: var(
+            --smtc-stroke-width-ctrl-outline-rest,
+            var(--smtc-stroke-width-default)
+        )
+        solid var(--smtc-stroke-ctrl-on-outline-rest);
+    pointer-events: none;
+}
+
+:host([appearance="outline"]:hover) {
+    background-color: var(
+        --smtc-background-ctrl-outline-hover,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-outline-hover,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+}
+
+:host([appearance="outline"]:hover)::after {
+    border: var(
+            --smtc-stroke-width-ctrl-outline-hover,
+            var(--smtc-stroke-width-default)
+        )
+        solid var(--smtc-stroke-ctrl-on-outline-hover);
+}
+
+:host([appearance="outline"]:hover:active) {
+    background-color: var(
+        --smtc-background-ctrl-outline-pressed,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-outline-pressed,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+}
+
+:host([appearance="outline"]:hover:active)::after {
+    border: var(
+            --smtc-stroke-width-ctrl-outline-pressed,
+            var(--smtc-stroke-width-default)
+        )
+        solid var(--smtc-stroke-ctrl-on-outline-pressed);
+}
+
+:host([appearance="subtle"]) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-rest,
+        var(--smtc-null-color)
+    );
+    border-color: var(
+        --smtc-stroke-ctrl-on-subtle-rest,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-subtle-rest,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    box-shadow: unset;
+}
+
+:host([appearance="subtle"]:hover) {
+    background-color: var(--smtc-background-ctrl-subtle-hover);
+    border-color: var(
+        --smtc-stroke-ctrl-on-subtle-hover,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-subtle-hover,
+        var(
+            --smtc-foreground-ctrl-neutral-primary-hover,
+            var(--smtc-foreground-ctrl-neutral-primary-rest)
+        )
+    );
+}
+
+:host([appearance="subtle"]:hover:active) {
+    background-color: var(--smtc-background-ctrl-subtle-pressed);
+    border-color: var(
+        --smtc-stroke-ctrl-on-subtle-pressed,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-subtle-pressed,
+        var(
+            --smtc-foreground-ctrl-neutral-primary-pressed,
+            var(--smtc-foreground-ctrl-neutral-primary-rest)
+        )
+    );
+}
+
+:host([appearance="subtle"]) ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    color: var(
+        --smtc-foreground-ctrl-icon-on-subtle-rest,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+}
+
+:host([appearance="subtle"]:hover)
+    ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    color: var(
+        --smtc-foreground-ctrl-icon-on-subtle-hover,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+}
+
+:host([appearance="subtle"]:hover:active)
+    ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    color: var(
+        --smtc-foreground-ctrl-icon-on-subtle-pressed,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+}
+
+:host([appearance]:not([appearance="subtle"])[aria-pressed="true"]) {
+    background-color: var(
+        --smtc-background-ctrl-active-brand-rest,
+        var(--smtc-background-ctrl-brand-rest)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-active-brand-rest,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+    box-shadow: var(--mai-smtc-shadow-ctrl-brand-key);
+}
+
+:host([appearance]:not([appearance="subtle"])[aria-pressed="true"]:hover) {
+    background-color: var(
+        --smtc-background-ctrl-active-brand-hover,
+        var(--smtc-background-ctrl-brand-hover)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-active-brand-hover,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+}
+
+:host(
+    [appearance]:not([appearance="subtle"])[aria-pressed="true"]:hover:active
+) {
+    background-color: var(
+        --smtc-background-ctrl-active-brand-pressed,
+        var(--smtc-background-ctrl-brand-pressed)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-active-brand-pressed,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+}
+
+:host(
+    [appearance]:not([appearance="subtle"])[aria-pressed="true"]:is(
+            :disabled,
+            [disabled]
+        )
+) {
+    background-color: var(
+        --smtc-background-ctrl-active-brand-disabled,
+        var(--smtc-background-ctrl-brand-disabled)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-active-brand-disabled,
+        var(--smtc-foreground-ctrl-on-brand-disabled)
+    );
+}
+
+:host([aria-pressed="true"]) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-selected-rest,
+        var(--smtc-background-ctrl-subtle-rest, var(--smtc-null-color))
+    );
+    color: var(
+        --smtc-foreground-ctrl-active-brand-rest,
+        var(--smtc-foreground-ctrl-brand-rest)
+    );
+}
+
+:host([aria-pressed="true"]:hover) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-selected-hover,
+        var(--smtc-background-ctrl-subtle-hover)
+    );
+    color: var(
+        --smtc-foreground-ctrl-active-brand-hover,
+        var(--smtc-foreground-ctrl-brand-hover)
+    );
+}
+
+:host([aria-pressed="true"]:hover:active) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-selected-pressed,
+        var(--smtc-background-ctrl-subtle-pressed)
+    );
+    color: var(
+        --smtc-foreground-ctrl-active-brand-pressed,
+        var(--smtc-foreground-ctrl-brand-pressed)
+    );
+}
+
+:host([aria-pressed="true"]:is(:disabled, [disabled])) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-selected-disabled,
+        var(--smtc-background-ctrl-subtle-disabled, var(--smtc-null-color))
+    );
+    color: var(
+        --smtc-foreground-ctrl-active-brand-disabled,
+        var(--smtc-foreground-ctrl-brand-disabled)
+    );
+}
+
+:host(
+    :is(
+        :disabled,
+        [disabled],
+        [disabled-focusable],
+        [appearance]:is(:disabled, [disabled]),
+        [appearance][disabled-focusable]
+    )
+),
+:host(
+    :is(
+        :disabled,
+        [disabled],
+        [disabled-focusable],
+        [appearance]:is(:disabled, [disabled]),
+        [appearance][disabled-focusable]
+    ):hover
+),
+:host(
+    :is(
+            :disabled,
+            [disabled],
+            [disabled-focusable],
+            [appearance]:is(:disabled, [disabled]),
+            [appearance][disabled-focusable]
+        ):hover:active
+) {
+    background-color: var(--smtc-background-ctrl-neutral-disabled);
+    color: var(--smtc-foreground-ctrl-neutral-primary-disabled);
+    cursor: not-allowed;
+}
+
+:host([appearance="primary"]:is(:disabled, [disabled], [disabled-focusable])),
+:host(
+    [appearance="primary"]:is(:disabled, [disabled], [disabled-focusable]):is(
+            :hover,
+            :hover:active
+        )
+) {
+    border-color: transparent;
+}
+
+:host([appearance="outline"]:is(:disabled, [disabled], [disabled-focusable])),
+:host(
+    [appearance="outline"]:is(:disabled, [disabled], [disabled-focusable]):is(
+            :hover,
+            :hover:active
+        )
+) {
+    background-color: var(--smtc-null-color);
+    border-color: var(--smtc-stroke-ctrl-on-outline-disabled);
+    color: var(
+        --smtc-foreground-ctrl-on-outline-disabled,
+        var(--smtc-foreground-ctrl-neutral-primary-disabled)
+    );
+}
+
+:host([appearance="subtle"]:is(:disabled, [disabled], [disabled-focusable])),
+:host(
+    [appearance="subtle"]:is(:disabled, [disabled], [disabled-focusable]):is(
+            :hover,
+            :hover:active
+        )
+) {
+    background-color: var(
+        --smtc-background-ctrl-subtle-disabled,
+        var(--smtc-null-color)
+    );
+    border-color: var(
+        --smtc-stroke-ctrl-on-subtle-disabled,
+        var(--smtc-null-color)
+    );
+    color: var(
+        --smtc-foreground-ctrl-on-subtle-disabled,
+        var(--smtc-foreground-ctrl-neutral-primary-disabled)
+    );
+}
+
+:host([appearance="subtle"]:is(:disabled, [disabled], [disabled-focusable]))
+    ::slotted(:is(svg, [slot="start"], [slot="end"])),
+:host(
+        [appearance="subtle"]:is(
+                :disabled,
+                [disabled],
+                [disabled-focusable]
+            ):is(:hover, :hover:active)
+    )
+    ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+    color: var(
+        --smtc-foreground-ctrl-icon-on-subtle-disabled,
+        var(--smtc-foreground-ctrl-neutral-primary-disabled)
+    );
+}
+
+:host([appearance="onimage"]:is(:disabled, [disabled], [disabled-focusable])),
+:host(
+    [appearance="onimage"]:is(:disabled, [disabled], [disabled-focusable]):is(
+            :hover,
+            :hover:active
+        )
+) {
+    background-color: var(--smtc-background-ctrl-brand-disabled);
+    color: var(--smtc-foreground-ctrl-on-brand-disabled);
+    border-color: transparent;
+}
+
+@media (forced-colors: active) {
+    :host,
+    :host(:is([appearance="subtle"], [appearance="onimage"])) {
+        background-color: ButtonFace;
+        color: ButtonText;
+    }
+    :host(:is([appearance="subtle"], [appearance="onimage"]))
+        ::slotted(:is(svg, [slot="start"], [slot="end"])),
+    :host(
+            :is([appearance="subtle"], [appearance="onimage"]):is(
+                :hover,
+                :hover:active
+            )
+        )
+        ::slotted(:is(svg, [slot="start"], [slot="end"])) {
+        color: currentColor;
+        fill: currentColor;
+    }
+
+    :host([appearance]:not([appearance="subtle"])[aria-pressed="true"]),
+    :host([aria-pressed="true"]) {
+        background-color: Highlight;
+        color: HighlightText;
+        forced-color-adjust: none;
+    }
+
+    :host([aria-pressed="true"]:hover:active),
+    :host(
+        [appearance]:not(
+                [appearance="subtle"]
+            )[aria-pressed="true"]:hover:active
+    ),
+    :host(:is(:hover, :focus-visible)) {
+        background-color: ButtonFace;
+        border-color: Highlight !important;
+    }
+    :host([appearance="primary"]:not(:is(:hover, :focus-visible))) {
+        background-color: Highlight;
+        color: HighlightText;
+        forced-color-adjust: none;
+    }
+    :host(
+        :is(
+            :disabled,
+            [disabled],
+            [disabled-focusable],
+            [appearance]:is(:disabled, [disabled]),
+            [appearance][disabled-focusable]
+        )
+    ) {
+        background-color: ButtonFace;
+        color: GrayText;
+        border-color: ButtonText;
+    }
+}

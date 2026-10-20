@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --configLoader runner",
+    "build": "tsc -b && vite build --configLoader runner",
     "verifier": "tsc -b --noEmit",
-    "test:e2e": "vite build && playwright test"
+    "test:e2e": "vite build --configLoader runner && playwright test"
   },
   "dependencies": {
     "react": "18.3.1",

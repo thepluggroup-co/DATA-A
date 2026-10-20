@@ -7,6 +7,7 @@ type Livrable = { id: string; nom: string; partage_client: boolean };
 type Mission = { id: string; enqueteur: string; actif: boolean; fiches: number };
 type Organisation = { id: string; nom: string; type: string };
 type Workflow = { etape: string; statut: string; historique: { etape: string; role: string; utilisateur: string }[] };
+type Version = { type: string; version: string; statut: string; commentaire: string; auteur: string };
 
 function Missions({ p }: { p: Projet }): ReactNode {
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -64,8 +65,11 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
   const [livrables, setLivrables] = useState<Livrable[]>([]);
   const [occupe, setOccupe] = useState(false);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [versions, setVersions] = useState<Version[]>([]);
+  const [typeVersion, setTypeVersion] = useState("questionnaire");
+  const [sourceVersion, setSourceVersion] = useState("");
   const charger = (): void => { api<Livrable[]>(`/api/projets/${p.id}/livrables`).then(setLivrables).catch(() => setLivrables([])); };
-  useEffect(() => { charger(); api<Workflow>(`/api/cabinet/projets/${p.id}/validation`).then(setWorkflow).catch(() => undefined); }, [p.id]);
+  useEffect(() => { charger(); api<Workflow>(`/api/cabinet/projets/${p.id}/validation`).then(setWorkflow).catch(() => undefined); api<Version[]>(`/api/cabinet/projets/${p.id}/versions`).then(setVersions).catch(() => undefined); }, [p.id]);
   const action = async (quoi: "verifier" | "documents"): Promise<void> => {
     setOccupe(true);
     setMessage(null);
@@ -94,6 +98,7 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
     try { const r = await api<Workflow>(`/api/cabinet/projets/${p.id}/validation`, { methode: "POST", corps: {} }); setWorkflow(r); setMessage({ ok: true, texte: `Étape validée : ${r.etape}.` }); }
     catch (err) { setMessage({ ok: false, texte: (err as Error).message }); }
   };
+  const creerVersion = async (): Promise<void> => { try { const v = await api<Version>(`/api/cabinet/projets/${p.id}/versions`, { methode: "POST", corps: { type: typeVersion, source: sourceVersion } }); setVersions((x) => [...x, v]); setSourceVersion(""); setMessage({ ok: true, texte: `Version ${v.type} ${v.version} créée.` }); } catch (err) { setMessage({ ok: false, texte: (err as Error).message }); } };
   const partages = livrables.filter((l) => l.partage_client).length;
   return (
     <div className="panneau" aria-label={`Projet ${p.code}`}>
@@ -111,6 +116,7 @@ function DetailProjet({ p }: { p: Projet }): ReactNode {
       {message && <p className={message.ok ? "succes" : "erreur"} role="status">{message.texte}</p>}
       {ecarts.length > 0 && <ul>{ecarts.map((e, k) => <li key={k}>{e}</li>)}</ul>}
       {workflow && <div className="lecture actions"><strong>Workflow : {workflow.etape}</strong><span className="mention">{workflow.historique.length} validation(s) enregistrée(s)</span><button className="secondaire" onClick={() => void valider()}>Valider l’étape</button></div>}
+      <div className="lecture actions"><strong>Versions</strong><select value={typeVersion} onChange={(e) => setTypeVersion(e.target.value)} aria-label="Type de version"><option value="brief">Brief</option><option value="questionnaire">Questionnaire</option><option value="dictionnaire">Dictionnaire</option><option value="echantillonnage">Échantillonnage</option><option value="terrain">Terrain</option><option value="analyse">Analyse</option><option value="rapport">Rapport</option></select><input value={sourceVersion} onChange={(e) => setSourceVersion(e.target.value)} placeholder="Source / règle" aria-label="Source de version" /><button className="secondaire" onClick={() => void creerVersion()}>Créer une version</button><span className="mention">{versions.length} version(s)</span></div>
       <div className="grille-2">
         <section aria-label="Livrables">
           <h2>Livrables ({partages} partagé{partages > 1 ? "s" : ""} / {livrables.length})</h2>

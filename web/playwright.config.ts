@@ -8,6 +8,11 @@ const ICI = path.dirname(fileURLToPath(import.meta.url));
 // applique les migrations, sème le jeu FICTIF (usine, clients A et B) et sert l'API et le front-end construit (dist).
 const PORT = Number(process.env.PW_PORT ?? 8765);
 const UV = process.env.UV ?? path.join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".local", "bin", "uv");
+// Le cache global uv peut être verrouillé par un autre processus Windows ou
+// inaccessible dans un environnement restreint. Un cache local rend le
+// serveur de démonstration et les E2E autonomes.
+const UV_CACHE = path.join(ICI, ".uv-cache");
+const DEMO_TMP = path.join(ICI, ".e2e-tmp");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -29,6 +34,16 @@ export default defineConfig({
     timeout: 180_000,
     reuseExistingServer: false,
     stdout: "pipe",
-    env: { OPENBLAS_NUM_THREADS: "1", OMP_NUM_THREADS: "1", MKL_NUM_THREADS: "1" },
+    env: {
+      OPENBLAS_NUM_THREADS: "1",
+      OMP_NUM_THREADS: "1",
+      MKL_NUM_THREADS: "1",
+      UV_CACHE_DIR: UV_CACHE,
+      TEMP: DEMO_TMP,
+      TMP: DEMO_TMP,
+      TMPDIR: DEMO_TMP,
+      DATAA_DEMO_TMP: DEMO_TMP,
+      DATAA_DEMO: "1",
+    },
   },
 });

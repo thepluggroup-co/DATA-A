@@ -60,11 +60,11 @@ export function Brief(): ReactNode {
           <label htmlFor="antecedents">Antécédents et contexte</label>
           <textarea id="antecedents" rows={3} value={antecedents} onChange={(e) => setAntecedents(e.target.value)} placeholder="Étude précédente, business plan, financement, formation…" />
           <label htmlFor="marche">Description du marché</label>
-          <textarea id="marche" rows={4} value={marche} onChange={(e) => setMarche(e.target.value)} placeholder="Marché visé, zones, concurrents, tendances, contraintes…" required />
+          <textarea id="marche" rows={4} value={marche} onChange={(e) => setMarche(e.target.value)} placeholder="Marché visé, zones, concurrents, tendances, contraintes…" />
           <label htmlFor="produits">Produits ou services</label>
-          <textarea id="produits" rows={3} value={produits} onChange={(e) => setProduits(e.target.value)} placeholder="Offre, usages, prix, proposition de valeur…" required />
+          <textarea id="produits" rows={3} value={produits} onChange={(e) => setProduits(e.target.value)} placeholder="Offre, usages, prix, proposition de valeur…" />
           <label htmlFor="attentes">Résultats et projections attendus</label>
-          <textarea id="attentes" rows={3} value={attentes} onChange={(e) => setAttentes(e.target.value)} placeholder="Décisions à prendre, scénarios, indicateurs, livrables…" required />
+          <textarea id="attentes" rows={3} value={attentes} onChange={(e) => setAttentes(e.target.value)} placeholder="Décisions à prendre, scénarios, indicateurs, livrables…" />
           <label htmlFor="objectifs">Objectifs (un par ligne)</label>
           <textarea id="objectifs" rows={3} value={objectifs} onChange={(e) => setObjectifs(e.target.value)} required />
           <label htmlFor="cibles">Cibles (une par ligne)</label>

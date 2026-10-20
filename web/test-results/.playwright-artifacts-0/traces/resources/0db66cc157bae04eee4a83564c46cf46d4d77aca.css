@@ -1,0 +1,31 @@
+/*
+ Copyright (C) Microsoft Corporation. All rights reserved.
+ Use of this source code is governed by a BSD-style license that can be
+ found in the LICENSE file.
+*/
+
+:host {
+  border-bottom: var(--smtc-stroke-width-default) solid var(--smtc-stroke-divider-subtle);
+  padding-inline: var(--smtc-padding-content-xx-small);
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+:host([pinned]) {
+  height: 50px;
+}
+
+/* Let mai-button handle its own visual styling (background, padding, border).
+   Only apply layout and typography overrides needed for the header context. */
+::slotted([slot="title"]) {
+  color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+  font-size: var(--smtc-text-global-body2-font-size);
+  line-height: var(--smtc-text-global-body2-line-height);
+  font-weight: var(--smtc-text-style-default-header-weight);
+  font-family: inherit;
+}
+

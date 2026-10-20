@@ -66,7 +66,7 @@ export function Connexion(): ReactNode {
               <label htmlFor="mdp">Mot de passe</label>
               <div className="champ-secret">
                 <input id="mdp" type={voirMdp ? "text" : "password"} autoComplete="current-password" value={mdp} onChange={(e) => setMdp(e.target.value)} required />
-                <button type="button" className="secondaire" onClick={() => setVoirMdp((v) => !v)} aria-label={voirMdp ? "Masquer le mot de passe" : "Afficher le mot de passe"}>{voirMdp ? "Masquer" : "Afficher"}</button>
+                <button type="button" className="secondaire" onClick={() => setVoirMdp((v) => !v)} aria-label={voirMdp ? "Masquer le secret" : "Afficher le secret"}>{voirMdp ? "Masquer" : "Afficher"}</button>
               </div>
               <span className="mention">Utilisez l’adresse e-mail créée par l’administrateur DATA’A.</span>
               <span />

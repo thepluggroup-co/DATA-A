@@ -150,6 +150,19 @@ class Partage(BaseModel):
 
 class ValidationProjet(BaseModel):
     commentaire: str = Field(default="", max_length=2000)
+    version: str = Field(default="", max_length=40)
+    regle: str = Field(default="", max_length=120)
+
+
+class VersionProjet(BaseModel):
+    type: str = Field(pattern=r"^(brief|questionnaire|dictionnaire|echantillonnage|terrain|analyse|rapport)$")
+    commentaire: str = Field(default="", max_length=2000)
+    source: str = Field(default="", max_length=2000)
+
+
+class QuestionAssistant(BaseModel):
+    question: str = Field(min_length=2, max_length=2000)
+    projet: str | None = None
 
 
 # ------------------------------------------------------------------------------------------------ outils
@@ -451,6 +464,13 @@ def creer_app(cfg: Config) -> FastAPI:
         return [{"role": role, "permissions": sorted(perms)} for role, perms in securite.PERMISSIONS_PAR_ROLE.items()
                 if role.startswith("cabinet") or role.startswith("consultant") or role in {"expert_etude", "enqueteur"}]
 
+    @app.get("/api/cabinet/notifications")
+    def cabinet_notifications(c: Usine, s: BDUsine) -> list[dict[str, Any]]:
+        from plateforme.stockage.modeles import JournalAudit
+        entrees = list(s.scalars(select(JournalAudit).order_by(JournalAudit.id.desc()).limit(30)))
+        return [{"id": e.id, "titre": e.action.replace("_", " ").capitalize(), "texte": e.cible, "le": e.le.isoformat(timespec="seconds"), "lu": False}
+                for e in entrees]
+
     @app.get("/api/cabinet/projets/{ident}/validation")
     def cabinet_validation_lire(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
         p = _projet(s, ident)
@@ -468,12 +488,47 @@ def creer_app(cfg: Config) -> FastAPI:
         if attendu is None or courant != attendu[0]:
             raise HTTPException(403, f"validation impossible pour le rôle {role} à l'étape {courant}")
         historique = list(p.parametres.get("workflow", {}).get("historique", []))
-        historique.append({"etape": attendu[1], "role": role, "utilisateur": c.utilisateur.nom, "commentaire": d.commentaire})
+        historique.append({"etape": attendu[1], "role": role, "utilisateur": c.utilisateur.nom,
+                           "commentaire": d.commentaire, "version": d.version, "regle": d.regle,
+                           "le": securite.maintenant().isoformat()})
         p.parametres = {**p.parametres, "workflow": {"etape": attendu[1], "historique": historique}}
         if attendu[1] == "livre":
             p.statut = "livre"
         audit.journaliser(s, "validation_projet", p.code, {"de": courant, "vers": attendu[1], "role": role}, p.organisation_id, c.utilisateur.id)
         return {"etape": attendu[1], "historique": historique, "statut": p.statut}
+
+    @app.get("/api/cabinet/projets/{ident}/versions")
+    def cabinet_versions_lire(ident: str, c: Usine, s: BDUsine) -> list[dict[str, Any]]:
+        p = _projet(s, ident)
+        return list(p.parametres.get("versions", []))
+
+    @app.post("/api/assistant")
+    def assistant_question(d: QuestionAssistant, c: Client, s: BD) -> dict[str, Any]:
+        """Copilote gouverné : contexte minimal, aucune statistique inventée."""
+        contexte: dict[str, Any] = {"organisation": c.organisation.nom}
+        if d.projet:
+            p = _projet(s, d.projet)
+            contexte.update({"projet": p.code, "statut": p.statut,
+                             "versions": p.parametres.get("versions", []),
+                             "workflow": p.parametres.get("workflow", {})})
+        return {"reponse": "Je peux analyser ce contexte, mais aucune conclusion chiffrée n’est produite sans base, filtre et méthode validés.",
+                "preuves": contexte, "limites": ["moteur IA externe non connecté", "validation humaine requise"]}
+
+    @app.post("/api/cabinet/projets/{ident}/versions")
+    def cabinet_version_creer(ident: str, d: VersionProjet, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        if "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour versionner le projet")
+        versions = list(p.parametres.get("versions", []))
+        meme_type = [v for v in versions if v.get("type") == d.type]
+        version = f"{len(meme_type) + 1:02d}"
+        entree = {"type": d.type, "version": version, "statut": "brouillon", "commentaire": d.commentaire,
+                  "source": d.source, "auteur": c.utilisateur.nom, "role": c.utilisateur.role,
+                  "le": securite.maintenant().isoformat()}
+        versions.append(entree)
+        p.parametres = {**p.parametres, "versions": versions}
+        audit.journaliser(s, "version_projet_creee", p.code, entree, p.organisation_id, c.utilisateur.id)
+        return entree
 
     @app.post("/api/usine/projets/{ident}/verifier")
     def usine_verifier(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:

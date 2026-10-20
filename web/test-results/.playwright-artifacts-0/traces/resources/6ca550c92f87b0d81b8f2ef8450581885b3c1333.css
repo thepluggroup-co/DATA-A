@@ -1,0 +1,293 @@
+:host([hidden]) {
+    display: none;
+}
+:host {
+    display: block;
+}
+
+:host {
+    
+    --_curveAccelerateMid: cubic-bezier(1, 0, 1, 1);
+    --_curveDecelerateMid: cubic-bezier(0, 0, 0, 1);
+    --_durationNormal: 250ms;
+    --_durationUltraFast: 150ms;
+
+    --_squircle-modifier: 1;
+    --_focus-indicator-color: var(
+        --smtc-ctrl-input-bottom-line-stroke-selected,
+        var(--smtc-background-ctrl-brand-rest)
+    );
+    --_border-color: var(
+        --smtc-ctrl-input-stroke-rest,
+        var(--smtc-stroke-ctrl-on-outline-rest)
+    );
+    --_border-width: var(--smtc-stroke-width-default);
+    --_border-block-end-color: var(
+        --smtc-ctrl-input-bottom-line-stroke-rest,
+        var(--smtc-foreground-ctrl-neutral-secondary-rest)
+    );
+    --_placeholder-color: var(--smtc-foreground-ctrl-neutral-secondary-rest);
+    --_focus-indicator-height: 2px;
+    font-family: var(--smtc-text-style-default-regular-font-family);
+    font-size: var(
+        --smtc-text-ramp-item-body-font-size,
+        var(--smtc-text-global-body3-font-size)
+    );
+    font-weight: var(--smtc-text-style-default-regular-weight);
+    line-height: var(
+        --smtc-text-ramp-item-body-line-height,
+        var(--smtc-text-global-body3-line-height)
+    );
+    max-width: 400px;
+}
+.label {
+    color: var(
+        --smtc-foreground-ctrl-on-transparent-rest,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    display: flex;
+    flex-shrink: 0;
+    padding-block-end: var(
+        --smtc-padding-ctrl-text-bottom,
+        var(--smtc-padding-ctrl-text-top)
+    );
+    padding-inline-end: var(--smtc-gap-inside-ctrl-to-secondary-icon);
+}
+
+.label[hidden],
+:host(:empty) .label {
+    display: none;
+}
+
+.root {
+    align-items: center;
+    background-color: var(
+        --smtc-ctrl-input-background-rest,
+        var(--smtc-background-ctrl-neutral-rest)
+    );
+    cursor: text;
+    border: var(--_border-width) solid var(--_border-color);
+    border-block-end-color: var(--_border-block-end-color);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier)
+    );
+    corner-shape: squircle;
+    box-sizing: border-box;
+    height: var(--smtc-size-ctrl-default);
+    display: inline-flex;
+    flex-direction: row;
+    gap: var(--smtc-gap-inside-ctrl-default);
+    padding: 0 var(--smtc-padding-ctrl-horizontal-default);
+    position: relative;
+    width: 100%;
+}
+
+.root::after {
+    border-bottom: var(--_focus-indicator-height) solid
+        var(--_focus-indicator-color);
+    border-radius: 0 0
+        calc(var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier))
+        calc(var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier));
+    corner-shape: squircle;
+    box-sizing: border-box;
+    clip-path: inset(calc(100% - var(--_focus-indicator-height)) 1px 0px);
+    content: "";
+    height: max(var(--_focus-indicator-height), var(--smtc-corner-ctrl-rest));
+    inset: auto -1px 0;
+    position: absolute;
+    transform: scaleX(0);
+    transition-timing-function: var(--_curveAccelerateMid);
+    transition-duration: var(--_durationUltraFast);
+    transition-property: transform;
+}
+
+:host(:focus-within) .root::after {
+    transform: scaleX(1);
+    transition-property: transform;
+    transition-duration: var(--_durationNormal);
+    transition-timing-function: var(--_curveDecelerateMid);
+}
+
+:host([readonly]) .root::after,
+:host(:is([disabled], :disabled)) .root::after {
+    content: none;
+}
+
+.root::before {
+    position: absolute;
+    pointer-events: none;
+    content: "";
+    inset: -1px;
+    border-radius: calc(
+        var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier)
+    );
+    corner-shape: squircle;
+}
+
+.control {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier)
+    );
+    corner-shape: squircle;
+    background: var(--smtc-null-color);
+    font-family: var(--smtc-text-style-default-regular-font-family);
+    font-weight: var(--smtc-text-style-default-regular-weight);
+    font-size: var(
+        --smtc-text-ramp-item-body-font-size,
+        var(--smtc-text-global-body3-font-size)
+    );
+    border: none;
+    vertical-align: center;
+    padding: var(--smtc-padding-ctrl-text-top)
+        var(--smtc-padding-ctrl-text-side)
+        var(--smtc-padding-ctrl-text-bottom, var(--smtc-padding-ctrl-text-top));
+}
+
+:host([readonly]) .control {
+    color: var(--smtc-foreground-ctrl-neutral-secondary-rest);
+}
+
+.control:focus-visible {
+    outline: 0;
+    border: 0;
+}
+.control::placeholder {
+    color: var(--smtc-foreground-ctrl-neutral-secondary-rest);
+}
+:host ::slotted([slot="start"]),
+:host ::slotted([slot="end"]) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(
+        --smtc-foreground-ctrl-icon-on-neutral-rest,
+        var(--smtc-foreground-ctrl-neutral-primary-rest)
+    );
+    font-size: var(--smtc-size-ctrl-icon);
+}
+:host(:hover) .root {
+    --_border-color: var(
+        --smtc-ctrl-input-stroke-hover,
+        var(--smtc-stroke-ctrl-on-outline-hover)
+    );
+    --_border-block-end-color: var(
+        --smtc-ctrl-input-bottom-line-stroke-hover,
+        var(--smtc-foreground-ctrl-neutral-secondary-rest)
+    );
+}
+:host(:active) .root {
+    --_border-color: var(
+        --smtc-ctrl-input-stroke-pressed,
+        var(--smtc-stroke-ctrl-on-outline-pressed)
+    );
+    --_border-block-end-color: var(
+        --smtc-ctrl-input-bottom-line-stroke-pressed,
+        var(--smtc-foreground-ctrl-neutral-secondary-rest)
+    );
+}
+
+.root:has(.control:user-invalid) {
+    background-color: var(
+        --smtc-ctrl-input-background-error,
+        var(--smtc-background-ctrl-neutral-rest)
+    );
+    color: var(--smtc-status-danger-tint-foreground);
+    --_border-color: var(
+        --smtc-ctrl-input-stroke-error,
+        var(--smtc-status-danger-stroke, var(--smtc-status-danger-background))
+    );
+    --_border-block-end-color: var(
+        --smtc-ctrl-input-stroke-error,
+        var(--smtc-status-danger-stroke, var(--smtc-status-danger-background))
+    );
+}
+
+.control:user-invalid {
+    color: inherit;
+}
+
+:host(:focus-within) {
+    outline: none;
+}
+
+:host(:focus-within) .root::before {
+    border: var(--smtc-ctrl-input-stroke-width-selected) solid
+        var(
+            --smtc-ctrl-input-stroke-selected,
+            var(--smtc-stroke-ctrl-on-outline-rest)
+        );
+}
+
+:host(:focus-within) .control {
+    color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+}
+
+:host(:is([disabled], :disabled)) .root {
+    background: var(
+        --smtc-ctrl-input-background-disabled,
+        var(--smtc-background-ctrl-neutral-disabled)
+    );
+    border: var(--smtc-stroke-width-default) solid
+        var(
+            --smtc-ctrl-input-stroke-disabled,
+            var(--smtc-stroke-ctrl-on-outline-disabled)
+        );
+    cursor: default;
+    --_border-color: var(
+        --smtc-ctrl-input-stroke-disabled,
+        var(--smtc-stroke-ctrl-on-outline-disabled)
+    );
+    --_border-block-end-color: var(--_border-color);
+}
+
+:host(:is([disabled], :disabled)) .control::placeholder,
+:host(:is([disabled], :disabled)) ::slotted([slot="start"]),
+:host(:is([disabled], :disabled)) ::slotted([slot="end"]) {
+    color: var(--smtc-foreground-ctrl-neutral-secondary-disabled);
+    --_placeholder-color: var(
+        --smtc-foreground-ctrl-neutral-secondary-disabled
+    );
+}
+
+::selection {
+    color: var(
+        --smtc-ctrl-input-text-selection-foreground,
+        var(--smtc-foreground-ctrl-on-brand-rest)
+    );
+    background-color: var(
+        --smtc-ctrl-input-text-selection-background,
+        var(--smtc-background-ctrl-brand-rest)
+    );
+}
+
+@supports (corner-shape: squircle) {
+    :host {
+        --_squircle-modifier: 1.8;
+    }
+}
+
+@media (forced-colors: active) {
+    :host {
+        --_border-color: FieldText;
+        --_border-block-end-color: FieldText;
+        --_placeholder-color: FieldText;
+    }
+
+    :host(:hover),
+    :host(:active),
+    :host(:focus-within) {
+        --_border-color: Highlight;
+        --_border-block-end-color: Highlight;
+    }
+
+    :host(:is([disabled], :disabled)) {
+        --_color: GrayText;
+        --_border-color: GrayText;
+        --_border-block-end-color: GrayText;
+        --_placeholder-color: GrayText;
+    }
+}

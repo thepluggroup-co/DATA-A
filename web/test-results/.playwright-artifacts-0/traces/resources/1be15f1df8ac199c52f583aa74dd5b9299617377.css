@@ -1,0 +1,210 @@
+/* Copyright (C) Microsoft Corporation. All rights reserved.
+   Use of this source code is governed by a BSD-style license that can be
+   found in the LICENSE file. */
+
+:host {
+  --last-row-height: 0px;
+  display: grid;
+  grid-template-areas:
+    "icon content"
+    "icon bottom";
+  grid-template-columns: 20px 1fr;
+  grid-template-rows: 1fr var(--last-row-height);
+  border-radius: var(--smtc-corner-ctrl-lg-rest);
+  position: relative;
+  padding: var(--smtc-padding-ctrl-horizontal-default);
+  gap: var(--smtc-gap-inside-ctrl-default);
+}
+
+:host(:hover), :host(:focus-within) {
+  background-color: var(--smtc-background-ctrl-subtle-hover);
+}
+
+.icon-container {
+  grid-area: icon;
+
+  img {
+    object-fit: contain;
+  }
+
+  svg[data-type="warning"] {
+    color: var(--smtc-status-warning-tint-foreground);
+  }
+
+  svg[data-type="error"] {
+    color: var(--smtc-status-danger-background);
+  }
+}
+.icon-shield-error {
+  color: var(--smtc-status-warning-tint-foreground);
+}
+
+.icon-error {
+  color: var(--smtc-status-danger-background);
+}
+
+.content-container {
+  grid-area: content;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+
+  .text-container {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--smtc-gap-inside-ctrl-default);
+
+    .title {
+      color: var(--smtc-foreground-ctrl-on-subtle-rest);
+      padding-inline-start: var(--smtc-padding-ctrl-text-side);
+      word-break: break-word;
+    }
+
+    .details {
+      color: var(--smtc-foreground-ctrl-neutral-secondary-rest);
+      padding-inline-start: var(--smtc-padding-ctrl-text-side);
+    }
+
+    mai-link {
+      display: block;
+      padding-inline-start: var(--smtc-padding-ctrl-text-side);
+    }
+
+    .progress-container {
+      display: none;
+      flex-direction: column;
+      gap: var(--smtc-padding-content-xx-small);
+    }
+  }
+
+  .actions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--smtc-gap-between-content-x-small);
+
+    &.trailing-actions {
+      z-index: 1;
+      pointer-events: auto;
+    }
+
+    /* Hub actions: in-flow (display:flex) so the title wraps around them.
+       visibility toggles on hover/focus-within; align-self:center
+       vertically centers the buttons within the content row.
+       padding-inline reserves horizontal space so the title wraps
+       consistently between hover and non-hover states. */
+    &.hub-actions {
+      display: flex;
+      visibility: hidden;
+      flex-shrink: 0;
+      align-self: center;
+      margin-inline-start: auto;
+      padding-inline: var(--smtc-padding-content-xx-small);
+      border-radius: var(--smtc-corner-ctrl-default-rest);
+      gap: var(--smtc-gap-between-content-small);
+    }
+  }
+
+  .remove-item-button {
+    position: absolute;
+    top: 0;
+    inset-inline-end: 0;
+    margin: -4px;
+    z-index: 2;
+    pointer-events: auto;
+  }
+}
+
+/* Hub layout: make content-container a row so actions sit beside text.
+   Title wraps naturally via word-break. */
+:host([appearance="hub"]) .content-container {
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+/* padding-block is added on hover/focus so the visible action
+   buttons get vertical breathing room. */
+:host(:hover) .actions-container.hub-actions,
+:host(:focus-within) .actions-container.hub-actions {
+  visibility: visible;
+  padding-block: var(--smtc-padding-content-xx-small);
+}
+
+:host:has(.bottom-actions-container) {
+  row-gap: var(--smtc-padding-content-small);
+}
+
+.bottom-actions-container {
+  grid-area: bottom;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--smtc-padding-content-x-small);
+}
+
+:host([state="removed"]) {
+  opacity: 0.7;
+}
+
+:host([state="removed"]) .title {
+  text-decoration: line-through;
+}
+
+:host([state="in_progress"]) .progress-container {
+  display: flex;
+}
+
+:host([appearance="full-page"]) {
+  max-width: calc(840px - 2 * var(--smtc-padding-content-x-small));
+  padding: var(--mai-smtc-padding-card-default, var(--smtc-padding-content-align-default));
+  border-radius: var(--mai-smtc-corner-card-default, var(--smtc-corner-card-rest));
+  border: var(--smtc-stroke-width-default) solid var(--smtc-stroke-ctrl-on-outline-rest, var(--smtc-null-color));
+  margin: var(--smtc-padding-content-small) 0px;
+  grid-template-columns: 32px 1fr;
+  column-gap: var(--smtc-gap-between-content-xx-small);
+  gap: var(--smtc-gap-between-content-xx-small);
+  box-shadow:
+    var(--smtc-shadow-card-rest-key),
+    var(--smtc-shadow-card-rest-ambient);
+  .icon-container {
+    /* TODO(task.ms/60185540): Replace with semantic alternative */
+    padding: 6px;
+  }
+  .content-container {
+    padding: var(--smtc-padding-content-xx-small);
+    gap: var(--smtc-gap-between-content-medium);
+    .text-container {
+      padding: var(--smtc-padding-content-none) var(--smtc-padding-content-xxx-large) var(--smtc-padding-content-none)
+        var(--smtc-padding-content-none);
+      gap: var(--smtc-gap-between-content-xx-small);
+      .display-url {
+        color: var(--smtc-foreground-ctrl-neutral-secondary-rest);
+      }
+    }
+    .full-page-actions {
+      position: static;
+      display: flex;
+      flex-wrap: wrap;
+      padding-top: var(--smtc-padding-content-none);
+      gap: var(--smtc-gap-between-ctrl-default);
+      .details {
+        flex: 1;
+        align-self: center;
+      }
+      mai-button {
+        border-color: var(--smtc-stroke-ctrl-on-outline-rest);
+      }
+    }
+  }
+}
+
+:host:has(.bottom-actions-container) {
+  --last-row-height: var(--smtc-padding-content-x-large);
+}
+
+@media (forced-colors: active) {
+  :host([appearance="hub"]) {
+    border: var(--smtc-stroke-width-default) solid ButtonBorder;
+  }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -12,7 +13,10 @@ import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
-_HACHEUR = PasswordHasher()
+# Le mode démonstration peut tourner dans un runner très contraint. Il utilise
+# un coût réduit explicitement signalé par l'environnement ; la production
+# conserve les paramètres Argon2id par défaut.
+_HACHEUR = PasswordHasher(memory_cost=32768, time_cost=2, parallelism=1) if os.environ.get("DATAA_DEMO") == "1" else PasswordHasher()
 LONGUEUR_MIN = 12
 ECHECS_MAX = 5
 DUREE_BLOCAGE = timedelta(minutes=15)

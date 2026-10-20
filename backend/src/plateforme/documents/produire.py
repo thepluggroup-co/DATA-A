@@ -55,6 +55,14 @@ def produire(p: Projet, dossier: Path, en_pdf: bool = False) -> tuple[dict[str, 
     avant = json.loads(manifeste.read_text(encoding="utf-8")).get("sources", {}) if manifeste.exists() else {}
     sources = empreintes(p)
     modifiees = sorted(k for k in sources if avant and avant.get(k) != sources[k])
+    # Idempotence : une relance sans changement de source réutilise les
+    # fichiers existants au lieu de reconstruire onze documents Word.
+    if manifeste.exists() and avant == sources:
+        contenu = json.loads(manifeste.read_text(encoding="utf-8")).get("documents", {})
+        existants = {nom: [dossier / nom_fichier for nom_fichier in fichiers if (dossier / nom_fichier).exists()]
+                     for nom, fichiers in contenu.items()}
+        if existants and all(existants.values()):
+            return existants, []
     ecrits = {nom: gen(p, dossier, en_pdf) for nom, gen in GENERATEURS}
     manifeste.write_text(json.dumps({
         "etude": p.brief.etude, "cahier_des_charges": p.brief.version, "genere_le": datetime.now().isoformat(timespec="seconds"),

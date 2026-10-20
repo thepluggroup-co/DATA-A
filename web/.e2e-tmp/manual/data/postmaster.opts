@@ -1,0 +1,1 @@
+C:/Users/anaky/.local/outils/pgsql/bin/postgres.exe "-D" ".e2e-tmp\manual\data" "-p" "6544" "-h" "127.0.0.1"

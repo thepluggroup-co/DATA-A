@@ -1,0 +1,115 @@
+:host {
+    --_squircle-modifier: 1;
+    corner-shape: squircle;
+    display: grid;
+    box-sizing: border-box;
+    font-family: var(--smtc-text-style-default-regular-font-family);
+    font-size: var(
+        --smtc-text-ramp-item-body-font-size,
+        var(--smtc-text-global-body3-font-size)
+    );
+    line-height: var(
+        --smtc-text-ramp-item-body-line-height,
+        var(--smtc-text-global-body3-line-height)
+    );
+    width: 100%;
+    background: var(--smtc-status-informative-tint-background);
+    border: 1px solid var(--smtc-status-informative-tint-stroke);
+    color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+    border-radius: calc(
+        var(--smtc-corner-ctrl-rest) * var(--_squircle-modifier)
+    );
+    padding-block: var(--smtc-padding-content-align-outdent-icon-on-subtle);
+    padding-inline: var(--smtc-padding-content-align-default)
+        var(--smtc-padding-content-align-outdent-icon-on-subtle);
+    gap: var(--smtc-gap-inside-ctrl-default);
+    min-height: 36px;
+    align-items: center;
+    grid-template: "icon body actions dismiss" / auto 1fr auto auto;
+    contain: layout style paint;
+}
+
+:host([intent="success"]) {
+    background-color: var(--smtc-status-success-tint-background);
+    border-color: var(--smtc-status-success-tint-stroke);
+}
+
+:host([intent="warning"]) {
+    background-color: var(--smtc-status-warning-tint-background);
+    border-color: var(--smtc-status-warning-tint-stroke);
+}
+
+:host([intent="error"]) {
+    background-color: var(--smtc-status-danger-tint-background);
+    border-color: var(--smtc-status-danger-tint-stroke);
+}
+
+:host([layout="multiline"]) {
+    grid-template-areas:
+        "icon body dismiss"
+        "actions actions actions";
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto auto 1fr;
+    padding-block: var(--smtc-padding-content-align-default);
+    padding-inline: var(--smtc-padding-content-align-default);
+}
+
+.content {
+    grid-area: body;
+    max-width: 520px;
+    padding-inline: var(--smtc-padding-ctrl-text-side);
+}
+
+:host([layout="multiline"]) .content {
+    padding: 0;
+    align-self: flex-start;
+}
+
+::slotted([slot="icon"]) {
+    display: flex;
+    grid-area: icon;
+    flex-direction: column;
+    align-items: center;
+    color: var(--smtc-foreground-ctrl-neutral-primary-rest);
+}
+
+:host([layout="multiline"]) ::slotted([slot="icon"]) {
+    align-items: start;
+    height: 100%;
+}
+
+::slotted([slot="dismiss"]) {
+    grid-area: dismiss;
+}
+
+.actions {
+    grid-area: actions;
+    display: flex;
+    justify-self: end;
+    margin-inline-end: var(--smtc-gap-between-ctrl-default);
+    gap: var(--smtc-gap-between-ctrl-default);
+}
+
+:host([layout="multiline"]) .actions {
+    margin-block-start: var(--smtc-padding-content-align-default);
+    margin-inline-end: 0;
+}
+
+:host([layout="multiline"]) ::slotted([slot="dismiss"]) {
+    margin-block-start: calc(
+        (var(--smtc-padding-ctrl-horizontal-icon-only) + 2px) * -1
+    );
+    margin-inline-end: calc(
+        (var(--smtc-padding-ctrl-horizontal-icon-only) + 2px) * -1
+    );
+}
+
+::slotted(*) {
+    font-size: inherit;
+}
+
+@supports (corner-shape: squircle) {
+    :host {
+        --_squircle-modifier: 1.8;
+    }
+}

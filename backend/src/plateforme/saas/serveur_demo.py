@@ -18,6 +18,13 @@ import argparse  # noqa: E402
 import tempfile  # noqa: E402
 from pathlib import Path  # noqa: E402
 
+# Respecte le répertoire temporaire fourni par Playwright (notamment sous
+# Windows où le profil utilisateur peut être verrouillé par un autre processus).
+_tmp_env = os.environ.get("DATAA_DEMO_TMP") or os.environ.get("TEMP") or os.environ.get("TMP")
+if _tmp_env:
+    Path(_tmp_env).mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = _tmp_env
+
 from sqlalchemy import text  # noqa: E402
 
 from plateforme.outils.postgres_temporaire import PREFIXE_DEMO, arreter_orphelins, marquer_proprietaire, serveur  # noqa: E402
