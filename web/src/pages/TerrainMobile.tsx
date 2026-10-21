@@ -64,6 +64,8 @@ export function TerrainMobile(): ReactNode {
   const [erreur, setErreur] = useState("");
   const [message, setMessage] = useState("");
   const sauvegarde = useRef(Promise.resolve());
+  const envoiRef = useRef(false);
+  const relanceRef = useRef(false);
 
   useEffect(() => {
     const actualiser = (): void => setConnecte(navigator.onLine);
@@ -156,23 +158,48 @@ export function TerrainMobile(): ReactNode {
   };
 
   const synchroniser = async (): Promise<void> => {
-    if (!jeton || !connecte || !file.length || envoi) return;
+    if (!jeton || !connecte || !fileRef.current.length) return;
+    if (envoiRef.current) {
+      relanceRef.current = true;
+      return;
+    }
+    envoiRef.current = true;
     setEnvoi(true);
     setErreur("");
     setMessage("");
     try {
-      const resultat = await requete<ReponseLot>("/api/terrain/fiches", jeton, { fiches: file.slice(0, 100) });
-      const confirmees = new Set(resultat.acceptees);
-      await remplacerFile(fileRef.current.filter((f) => !confirmees.has(f.id)));
+      let nouvelles = 0;
+      let dejaRecues = 0;
+      const refusees: ReponseLot["refusees"] = [];
+      const idsRefuses = new Set<string>();
+      while (true) {
+        const lot = fileRef.current.filter((f) => !idsRefuses.has(f.id)).slice(0, 100);
+        if (!lot.length) break;
+        const resultat = await requete<ReponseLot>("/api/terrain/fiches", jeton, { fiches: lot });
+        const confirmees = new Set(resultat.acceptees);
+        await remplacerFile(fileRef.current.filter((f) => !confirmees.has(f.id)));
+        nouvelles += resultat.nouvelles;
+        dejaRecues += resultat.deja_recues;
+        refusees.push(...resultat.refusees);
+        resultat.refusees.forEach((r) => idsRefuses.add(r.id));
+        if (!resultat.acceptees.length && !resultat.refusees.length) {
+          throw new Error("Le serveur n’a confirmé aucune fiche.");
+        }
+      }
       const prochaineMission = await requete<Mission>("/api/terrain/mission", jeton);
       setMission(prochaineMission);
       if (cle && sel) localStorage.setItem(CLE_COFFRE, JSON.stringify(await chiffrer({ file: fileRef.current, mission: prochaineMission, jeton }, cle, sel)));
-      setMessage(`${resultat.nouvelles} nouvelle(s), ${resultat.deja_recues} déjà reçue(s).`);
-      if (resultat.refusees.length) setErreur(resultat.refusees.map((r) => `${r.id} : ${r.motif}`).join(" · "));
+      setMessage(`${nouvelles} nouvelle(s), ${dejaRecues} déjà reçue(s).`);
+      if (refusees.length) setErreur(refusees.map((r) => `${r.id} : ${r.motif}`).join(" · "));
     } catch (e) {
       setErreur(`Synchronisation interrompue : ${(e as Error).message}. Les fiches restent sur cet appareil.`);
     } finally {
+      envoiRef.current = false;
       setEnvoi(false);
+      if (relanceRef.current) {
+        relanceRef.current = false;
+        window.setTimeout(() => void synchroniser(), 0);
+      }
     }
   };
 

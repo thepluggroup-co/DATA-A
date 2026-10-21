@@ -2,12 +2,12 @@ import { expect, test } from "@playwright/test";
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-test("50 fiches hors ligne survivent au rechargement et le renvoi reste idempotent", async ({ page }) => {
-  let lot: unknown;
+test("105 fiches hors ligne survivent au rechargement et les lots restent idempotents", async ({ page }) => {
+  const lots: unknown[][] = [];
   let autorisation = "";
   page.on("request", (request) => {
     if (request.url().endsWith("/api/terrain/fiches")) {
-      lot = request.postDataJSON();
+      lots.push((request.postDataJSON() as { fiches: unknown[] }).fiches);
       autorisation = request.headers().authorization ?? "";
     }
   });
@@ -27,7 +27,7 @@ test("50 fiches hors ligne survivent au rechargement et le renvoi reste idempote
   await page.getByRole("button", { name: "Déverrouiller" }).click();
   await expect(page.getByRole("heading", { name: "ENQ1 · Douala" })).toBeVisible();
 
-  for (let index = 0; index < 50; index += 1) {
+  for (let index = 0; index < 105; index += 1) {
     await page.locator(".terrain-formulaire").evaluate((element) => {
       const formulaire = element as HTMLFormElement;
       for (const select of formulaire.querySelectorAll<HTMLSelectElement>("select[required]")) {
@@ -48,15 +48,19 @@ test("50 fiches hors ligne survivent au rechargement et le renvoi reste idempote
     });
     await page.getByRole("button", { name: "Enregistrer la fiche" }).click();
   }
-  await expect(page.getByText("50 en attente")).toBeVisible();
+  await expect(page.getByText("105 en attente")).toBeVisible();
 
   await page.context().setOffline(false);
-  await expect(page.getByRole("status")).toContainText("50 nouvelle(s)", { timeout: 30_000 });
+  await expect(page.getByRole("status")).toContainText("105 nouvelle(s)", { timeout: 30_000 });
   await expect(page.getByText("0 en attente")).toBeVisible();
   expect(autorisation).toMatch(/^Bearer /);
-  expect(lot).toBeTruthy();
+  expect(lots.map((lot) => lot.length)).toEqual([100, 5]);
 
-  const renvoi = await page.request.post("/api/terrain/fiches", { data: lot, headers: { Authorization: autorisation } });
-  expect(renvoi.ok()).toBeTruthy();
-  expect(await renvoi.json()).toMatchObject({ nouvelles: 0, deja_recues: 50, refusees: [] });
+  for (const lot of lots) {
+    const renvoi = await page.request.post("/api/terrain/fiches", {
+      data: { fiches: lot }, headers: { Authorization: autorisation },
+    });
+    expect(renvoi.ok()).toBeTruthy();
+    expect(await renvoi.json()).toMatchObject({ nouvelles: 0, deja_recues: lot.length, refusees: [] });
+  }
 });
