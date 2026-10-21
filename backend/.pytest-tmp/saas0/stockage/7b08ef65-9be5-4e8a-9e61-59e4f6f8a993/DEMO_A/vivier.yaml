@@ -1,0 +1,420 @@
+# Vivier des enquêteurs — PERSONNES FICTIVES (projet de démonstration). Toute personne réelle relève du registre
+# privé (reference/prive/), jamais du dépôt : le chargement « versionné » refuse une personne non marquée fictive.
+personnes:
+- id: PER_EXP
+  nom: FICTIF
+  prenom: Expert
+  genre: H
+  telephone: 000 000 001
+  whatsapp: 000 000 001
+  ville: DOUALA
+  langues:
+  - fr
+  - en
+  niveau_etudes: Licence (fictif)
+  experience: 10
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  - statut: actif
+    date: '2026-10-27'
+  fictif: true
+- id: PER_APP
+  nom: FICTIF
+  prenom: Appui
+  genre: F
+  telephone: 000 000 002
+  whatsapp: 000 000 002
+  ville: DOUALA
+  langues:
+  - fr
+  - en
+  niveau_etudes: Licence (fictif)
+  experience: 6
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  - statut: actif
+    date: '2026-10-27'
+  fictif: true
+- id: PER_SUP_DLA
+  nom: FICTIF
+  prenom: Superviseur Douala
+  genre: H
+  telephone: 000 000 003
+  whatsapp: 000 000 003
+  ville: DOUALA
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 5
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  - statut: actif
+    date: '2026-10-27'
+  fictif: true
+- id: PER_SUP_YDE
+  nom: FICTIF
+  prenom: Superviseure Yaoundé
+  genre: F
+  telephone: 000 000 004
+  whatsapp: 000 000 004
+  ville: YAOUNDE
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 5
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  - statut: actif
+    date: '2026-10-27'
+  fictif: true
+- id: PER_SUP_BAF
+  nom: FICTIF
+  prenom: Superviseur Bafoussam
+  genre: H
+  telephone: 000 000 005
+  whatsapp: 000 000 005
+  ville: BAFOUSSAM
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 4
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  - statut: actif
+    date: '2026-10-27'
+  fictif: true
+- id: PER_D1
+  nom: FICTIF
+  prenom: Enquêteur D1
+  genre: F
+  telephone: 000 000 011
+  whatsapp: 000 000 011
+  ville: DOUALA
+  langues:
+  - fr
+  - en
+  niveau_etudes: Licence (fictif)
+  experience: 4
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_D2
+  nom: FICTIF
+  prenom: Enquêteur D2
+  genre: H
+  telephone: 000 000 012
+  whatsapp: 000 000 012
+  ville: DOUALA
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 3
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_D3
+  nom: FICTIF
+  prenom: Enquêteur D3
+  genre: F
+  telephone: 000 000 013
+  whatsapp: 000 000 013
+  ville: DOUALA
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 1
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_Y1
+  nom: FICTIF
+  prenom: Enquêteur Y1
+  genre: F
+  telephone: 000 000 014
+  whatsapp: 000 000 014
+  ville: YAOUNDE
+  langues:
+  - fr
+  - en
+  niveau_etudes: Licence (fictif)
+  experience: 4
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_Y2
+  nom: FICTIF
+  prenom: Enquêteur Y2
+  genre: H
+  telephone: 000 000 015
+  whatsapp: 000 000 015
+  ville: YAOUNDE
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 3
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_Y3
+  nom: FICTIF
+  prenom: Enquêteur Y3
+  genre: F
+  telephone: 000 000 016
+  whatsapp: 000 000 016
+  ville: YAOUNDE
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 1
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_B1
+  nom: FICTIF
+  prenom: Enquêteur B1
+  genre: F
+  telephone: 000 000 017
+  whatsapp: 000 000 017
+  ville: BAFOUSSAM
+  langues:
+  - fr
+  - en
+  niveau_etudes: Licence (fictif)
+  experience: 4
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_B2
+  nom: FICTIF
+  prenom: Enquêteur B2
+  genre: H
+  telephone: 000 000 018
+  whatsapp: 000 000 018
+  ville: BAFOUSSAM
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 3
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_B3
+  nom: FICTIF
+  prenom: Enquêteur B3
+  genre: F
+  telephone: 000 000 019
+  whatsapp: 000 000 019
+  ville: BAFOUSSAM
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 1
+  smartphone: true
+  piece_verifiee: true
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: forme
+    date: '2026-10-22'
+  - statut: teste
+    date: '2026-10-23'
+  - statut: recrute
+    date: '2026-10-26'
+  fictif: true
+- id: PER_B4
+  nom: FICTIF
+  prenom: Candidat B4
+  genre: H
+  telephone: 000 000 020
+  whatsapp: 000 000 020
+  ville: BAFOUSSAM
+  langues:
+  - fr
+  niveau_etudes: Licence (fictif)
+  experience: 0
+  smartphone: false
+  piece_verifiee: false
+  historique:
+  - statut: candidat
+    date: '2026-10-19'
+  - statut: preselectionne
+    date: '2026-10-20'
+  - statut: convoque
+    date: '2026-10-21'
+  - statut: ecarte
+    date: '2026-10-22'
+    motif: Indisponible pendant les jours de terrain (motif fictif)
+  fictif: true

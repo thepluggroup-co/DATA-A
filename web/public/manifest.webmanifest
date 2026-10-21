@@ -1,0 +1,15 @@
+{
+  "name": "DATA'A — Terrain",
+  "short_name": "DATA'A Terrain",
+  "start_url": "/terrain",
+  "display": "standalone",
+  "background_color": "#040a18",
+  "theme_color": "#021c43",
+  "icons": [
+    {
+      "src": "/logo_data_a.png",
+      "sizes": "any",
+      "type": "image/png"
+    }
+  ]
+}

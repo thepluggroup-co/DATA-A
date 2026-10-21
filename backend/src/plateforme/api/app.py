@@ -578,45 +578,64 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.post("/api/assistant")
     def assistant_question(d: QuestionAssistant, c: Client, s: BD) -> dict[str, Any]:
-        """Copilote gouverné : contexte minimal, outils déclaratifs et preuve obligatoire."""
-        contexte: dict[str, Any] = {"organisation": c.organisation.nom}
-        analyses = []
-        recommandations = []
-        if d.projet:
-            p = _projet(s, d.projet)
-            analyses = list(p.parametres.get("analyses", []))
-            recommandations = list(p.parametres.get("recommandations", []))
-            contexte.update({"projet": p.code, "statut": p.statut,
-                             "versions": p.parametres.get("versions", []),
-                             "workflow": p.parametres.get("workflow", {}),
-                             "memoire": p.parametres.get("assistant_memoire", [])[-20:],
-                             "recommandations_validees": [r for r in recommandations if r.get("statut") == "validee"]})
-        outils = ["calculer_echantillon", "executer_analyse", "construire_tri_croise", "generer_recommandation", "produire_synthese"]
-        audit.journaliser(s, "assistant_question", d.projet or "global", {"question": d.question[:500], "outils": outils}, c.organisation.id, c.utilisateur.id)
-        valides = [a for a in analyses if a.get("statut") == "validee"]
-        recs_valides = [r for r in recommandations if r.get("statut") == "validee"]
-        attentes = [a for a in analyses if a.get("statut") in {"brouillon", "a_valider"}]
-        if d.projet:
-            reponse = (f"Étude {contexte.get('projet')} : {len(valides)} analyse(s) validée(s), "
-                       f"{len(recs_valides)} recommandation(s) validée(s) et {len(attentes)} élément(s) en attente. ")
-            reponse += "Je peux détailler les preuves disponibles ou préparer une synthèse."
-        else:
-            reponse = "Sélectionnez une étude pour obtenir une réponse fondée sur ses preuves et validations."
-        return {"reponse": reponse,
-                "preuves": contexte, "outils_disponibles": outils,
-                "verification": {"statut": "a_verifier", "preuves_requises": True, "validation_humaine_requise": True},
-                "limites": ["moteur IA externe non connecté", "validation humaine requise"]}
+        """Copilote DATA'A : outils déterministes en lecture seule, chaque réponse porte ses preuves."""
+        from plateforme import assistant as moteur_assistant
+
+        p = _projet(s, d.projet) if d.projet else None
+        analyses = list(p.parametres.get("analyses", [])) if p else []
+        recommandations = list(p.parametres.get("recommandations", [])) if p else []
+        if p and not c.usine:
+            analyses = [x for x in analyses if x.get("statut") == "validee"]
+            recommandations = [x for x in recommandations if x.get("statut") == "validee"]
+        jeu = None
+        variables = None
+        quotas = None
+        outil = moteur_assistant.classer(d.question)
+        if p and outil == "aide":
+            outil = "synthese"
+        if p and p.base_analyse and outil in {"tri_plat", "suivi_quotas", "synthese"}:
+            chemin_base = chemin_sur(cfg, p.base_analyse)
+            if chemin_base.is_file():
+                jeu = donnees.jeu(chemin_base)
+                variables = donnees.variables(jeu)
+                if outil in {"suivi_quotas", "synthese"} and p.dossier:
+                    quotas = donnees.suivi(chemin_sur(cfg, p.dossier), jeu)
+        garde = _garde(p) if p else None
+        resultat = moteur_assistant.repondre(
+            d.question, code=p.code if p else None, statut=p.statut if p else "",
+            analyses=analyses, recommandations=recommandations, suivi=quotas, jeu=jeu, variables=variables,
+            base_min=garde.base_min if garde else 30, seuil_k=garde.k if garde else 5, outil_force=outil,
+        )
+        redaction = "deterministe"
+        if resultat["preuves"]:
+            texte = moteur_assistant.rediger_localement(d.question, {
+                "outil": resultat["outil"], "preuves": resultat["preuves"], "limites": resultat["limites"],
+            })
+            if texte:
+                resultat["reponse"] = texte
+                resultat["limites"] = [*resultat["limites"],
+                                        "Rédaction libre par modèle local; les nombres ont été contrôlés contre les preuves.",
+                                        "Relecture humaine requise avant réutilisation dans un livrable."]
+                redaction = "ollama_local"
+            else:
+                resultat["limites"] = [*resultat["limites"],
+                                        "Modèle local absent, indisponible ou réponse non vérifiable; formulation déterministe utilisée."]
+        audit.journaliser(s, "assistant_question", p.code if p else "global",
+                          {"question": d.question[:500], "outil": resultat["outil"], "preuves": len(resultat["preuves"]),
+                           "redaction": redaction},
+                          c.organisation.id, c.utilisateur.id)
+        return {**resultat, "outils_disponibles": moteur_assistant.OUTILS,
+                "redaction": redaction,
+                "verification": {"preuves_jointes": bool(resultat["preuves"]), "lecture_seule": True,
+                                 "publication_automatique": False, "nombres_verifies": redaction == "ollama_local"}}
 
     @app.get("/api/assistant/outils")
     def assistant_outils(c: Client) -> dict[str, Any]:
-        """Registre public des capacités que le Copilote peut proposer au rôle courant."""
-        return {"outils": [
-            {"nom": "calculer_echantillon", "permission": "projet.piloter", "mutation": False},
-            {"nom": "executer_analyse", "permission": "analyse.executer", "mutation": False},
-            {"nom": "construire_tri_croise", "permission": "analyse.executer", "mutation": False},
-            {"nom": "generer_recommandation", "permission": "analyse.recommander", "mutation": True},
-            {"nom": "produire_synthese", "permission": "rapport.produire", "mutation": True},
-        ], "role": c.utilisateur.role}
+        """Registre des outils implémentés : aucun ne peut modifier un projet ou publier un rapport."""
+        from plateforme import assistant as moteur_assistant
+
+        return {"outils": [{"nom": nom, "permission": "projet.lire", "mutation": False}
+                           for nom in moteur_assistant.OUTILS], "role": c.utilisateur.role}
 
     @app.get("/api/assistant/memoire/{ident}")
     def assistant_memoire_lire(ident: str, c: Client, s: BD) -> dict[str, Any]:

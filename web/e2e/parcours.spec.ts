@@ -50,6 +50,24 @@ test("client A : ses études, suivi agrégé, croisement, refus sous la base min
   await expect(page.getByRole("link", { name: "BASE_ANALYSE_DEMO.sav" })).toBeVisible();
 });
 
+test("copilote client : réponse métier et preuves du suivi", async ({ page }) => {
+  await connecter(page, COMPTES.a);
+  const projetsCharges = page.waitForResponse((r) => r.url().endsWith("/api/projets") && r.request().method() === "GET");
+  await page.getByRole("link", { name: "Copilote IA" }).click();
+  const projets = await projetsCharges;
+  expect(projets.status()).toBe(200);
+  const liste = await projets.json() as { id: string }[];
+  expect(liste).toHaveLength(1);
+  await expect(page.getByLabel("Étude active")).toHaveValue(liste[0].id);
+  await page.getByLabel("Question à DATA'A").fill("Où en sont les quotas par ville ?");
+  await page.getByRole("button", { name: "Envoyer" }).click();
+  await expect(page.getByText(/271 fiches réalisées sur 300 prévues/)).toBeVisible();
+  await expect(page.getByText(/Rédaction : réponse structurée/)).toBeVisible();
+  await page.locator("details.assistant-preuves summary").click();
+  await expect(page.getByText(/quota\..*Douala/).first()).toBeVisible();
+  await expect(page.getByText("Aucune publication automatique")).toBeVisible();
+});
+
 test("client A dépose un brief : pré-estimation, puis l'étude apparaît dans sa liste", async ({ page }) => {
   await connecter(page, COMPTES.a);
   await page.getByRole("link", { name: "Nouveau brief" }).click();

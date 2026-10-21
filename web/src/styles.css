@@ -141,6 +141,21 @@ body.theme-clair { background: #f4f8fc; background-image: radial-gradient(900px 
 .apparence-reglages select { min-height: 2.5rem; }
 .assistant-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 1rem; }
 .assistant-fil { min-height: 28rem; display: flex; flex-direction: column; gap: .8rem; }
+.assistant-projet { display: grid; grid-template-columns: minmax(150px, 240px) minmax(220px, 1fr); align-items: center; gap: .8rem; margin-bottom: 1rem; }
+.assistant-messages { display: grid; gap: .8rem; max-height: min(60vh, 680px); overflow: auto; }
+.assistant-message { border-left: 2px solid var(--bord-fort); padding: .3rem .8rem; overflow-wrap: anywhere; }
+.assistant-message p { margin: .3rem 0; }
+.assistant-message small { color: var(--texte-3); }
+.assistant-preuves { margin-top: .5rem; color: var(--texte-2); }
+.assistant-preuves summary { cursor: pointer; }
+.assistant-preuves ul { list-style: none; padding: 0; display: grid; gap: .35rem; }
+.assistant-preuves li { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr); gap: .5rem; border-bottom: 1px solid var(--bord); padding: .35rem 0; }
+.assistant-preuves code, .assistant-preuves span { overflow-wrap: anywhere; }
+.assistant-preuves code { color: var(--turquoise); }
+.assistant-limites { color: var(--alerte); font-size: .82rem; padding-left: 1.1rem; }
+.assistant-saisie { display: flex; gap: .6rem; }
+.assistant-saisie input { flex: 1; }
+.assistant-garde { align-self: start; }
 .assistant-message { padding: .8rem 1rem; border-left: 3px solid var(--accent, var(--ciel)); background: var(--verre); border-radius: 8px; }
 .assistant-moi { border-left-color: var(--ok); }
 .assistant-message p { margin: .25rem 0 0; }
@@ -282,6 +297,31 @@ a.bouton:hover { background: rgba(21, 234, 224, 0.08); text-decoration: none; }
 /* La navigation reste verticale sur tablette ; elle devient compacte seulement
    sur les écrans mobiles étroits. */
 @media (max-width: 640px) {
+.terrain-mobile { width: min(100%, 760px); margin: 0 auto; padding: 1rem; }
+.terrain-mobile h1 { font-size: 1.35rem; margin: 0.35rem 0; }
+.terrain-mobile h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+.terrain-mobile > form:not(.terrain-formulaire) { display: grid; gap: 0.75rem; max-width: 440px; }
+.terrain-entete { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid var(--bord); }
+.terrain-entete small { color: var(--texte-3); }
+.terrain-etat { white-space: nowrap; color: var(--alerte); }
+.terrain-etat.en-ligne { color: var(--ok); }
+.terrain-suivi { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.7rem; padding: 0.9rem 0; color: var(--texte-2); border-bottom: 1px solid var(--bord); }
+.terrain-quotas { padding: 1rem 0; border-bottom: 1px solid var(--bord); }
+.terrain-quotas > div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.4rem 0; }
+.terrain-quotas strong { color: var(--turquoise); }
+.terrain-formulaire { display: grid; gap: 1rem; padding: 1.2rem 0; }
+.terrain-formulaire fieldset { min-width: 0; display: grid; gap: 0.9rem; padding: 1rem 0; border: 0; border-top: 1px solid var(--bord); }
+.terrain-formulaire legend { padding: 0 0.5rem 0 0; color: var(--turquoise); font-weight: 700; }
+.terrain-champ { display: grid; gap: 0.4rem; }
+.terrain-options { display: grid; gap: 0.45rem; }
+.terrain-options label { display: flex; align-items: center; gap: 0.6rem; }
+.terrain-fixe { display: flex; justify-content: space-between; gap: 1rem; margin: 0; color: var(--texte-2); }
+.terrain-fixe strong { color: var(--texte); }
+.terrain-grille { display: grid; gap: 0.7rem; }
+.terrain-grille label { display: grid; gap: 0.35rem; }
+.terrain-synchronisation { position: sticky; bottom: 0; padding: 0.8rem 0; background: rgba(4, 10, 24, 0.95); border-top: 1px solid var(--bord); }
+.terrain-synchronisation button { width: 100%; }
+.terrain-synchronisation p { overflow-wrap: anywhere; }
   .coquille { grid-template-columns: 1fr; }
   .laterale { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 0.6rem 0.8rem; }
   .laterale nav { flex-direction: row; flex-wrap: wrap; }

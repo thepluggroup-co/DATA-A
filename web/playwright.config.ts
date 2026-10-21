@@ -12,7 +12,7 @@ const UV = process.env.UV ?? path.join(process.env.USERPROFILE ?? process.env.HO
 // inaccessible dans un environnement restreint. Un cache local rend le
 // serveur de démonstration et les E2E autonomes.
 const UV_CACHE = path.join(ICI, ".uv-cache");
-const DEMO_TMP = path.join(ICI, ".e2e-tmp");
+const DEMO_TMP = process.env.PW_TMP_DIR ? path.resolve(process.env.PW_TMP_DIR) : path.join(ICI, ".e2e-tmp");
 
 export default defineConfig({
   testDir: "./e2e",

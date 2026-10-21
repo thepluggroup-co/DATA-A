@@ -214,6 +214,34 @@ def _analyse_resultats(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analyse_radiant(args: argparse.Namespace) -> int:
+    """Paquet Radiant local, anonyme et rattaché à la version exacte de la base d'analyse."""
+    from plateforme.analyse.radiant import exporter_paquet
+
+    try:
+        _, note, _, analyse, _ = _jeux_analyse(args)
+        paquet = exporter_paquet(analyse, args.sortie)
+    except DecisionsInconnues as e:
+        print("✘", e)
+        return 1
+    print(f"✔ paquet Radiant {paquet.version} : {paquet.lignes} fiches, {len(paquet.variables)} variables → {paquet.chemin}")
+    print(note.texte())
+    print("⚠ Export numérique anonymisé ; les retours sont des propositions à valider, pas des résultats publiés.")
+    return 0
+
+
+def _analyse_radiant_retour(args: argparse.Namespace) -> int:
+    from plateforme.analyse.radiant import EchangeRadiantInvalide, importer_retour
+
+    try:
+        chemin = importer_retour(args.paquet, args.retour, args.sortie)
+    except EchangeRadiantInvalide as e:
+        print("✘ retour Radiant refusé :", e)
+        return 1
+    print(f"✔ proposition Radiant liée au paquet source → {chemin} (statut a_valider)")
+    return 0
+
+
 def _rapport_produire(args: argparse.Namespace) -> int:
     """Rapport déclaré du projet → contrôles bloquants → Word, présentation, PDF. Rien n'est écrit si un contrôle bloque."""
     from plateforme.analyse.rapport import chargeur
@@ -430,6 +458,17 @@ def main(argv: list[str] | None = None) -> int:
     for nom, options in _OPTIONS_ANALYSE:
         ar.add_argument(nom, **options)
     ar.set_defaults(f=_analyse_resultats)
+    ra = an.add_parser("radiant", help="échange Radiant versionné, anonymisé et soumis à validation humaine")
+    ras = ra.add_subparsers(dest="action", required=True)
+    rex = ras.add_parser("exporter", help="exporte la base d'analyse et le dictionnaire pour Radiant")
+    for nom, options in _OPTIONS_ANALYSE:
+        rex.add_argument(nom, **options)
+    rex.set_defaults(f=_analyse_radiant)
+    rret = ras.add_parser("retour", help="valide et importe un retour Radiant comme proposition à relire")
+    rret.add_argument("--paquet", required=True, help="paquet .zip exact ayant servi à l'analyse")
+    rret.add_argument("--retour", required=True, help="retour_radiant.json rempli par l'analyste")
+    rret.add_argument("--sortie", required=True, help="fichier JSON de proposition")
+    rret.set_defaults(f=_analyse_radiant_retour)
     rp = sous.add_parser("rapport").add_subparsers(dest="action", required=True)
     rpp = rp.add_parser("produire", help="rapport d'étude : contrôles bloquants puis Word, présentation de restitution, PDF")
     for nom, options in [*_OPTIONS_ANALYSE[:-1],

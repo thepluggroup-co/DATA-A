@@ -1,0 +1,15 @@
+brief: brief.yaml
+tarifs: tarifs.yaml
+cabinet: cabinet.yaml
+vivier: vivier.yaml
+dictionnaire: dictionnaire.yaml
+referentiel: C:\Users\anaky\DATA'A\DATA-A\reference\geo\CMR
+gabarit_chronogramme: C:\Users\anaky\DATA'A\DATA-A\reference\gabarits\chronogramme_etude.yaml
+plan_echantillonnage: plan_echantillonnage.yaml
+plan_terrain: plan_terrain.yaml
+encadrement:
+  EXPERT: PER_EXP
+  APPUI_1: PER_APP
+  SUP_DOUALA: PER_SUP_DLA
+  SUP_YAOUNDE: PER_SUP_YDE
+  SUP_BAFOUSSAM: PER_SUP_BAF

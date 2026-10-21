@@ -86,6 +86,9 @@ def test_suivi_agrege_et_croisement_avec_garde_fous(env: tuple[Config, str]) -> 
     a = _client(cfg)
     h = _connecter(a, "client_a")
     pid = a.get("/api/projets").json()[0]["id"]
+    outils = a.get("/api/assistant/outils").json()["outils"]
+    assert {x["nom"] for x in outils} == {"etat_etude", "suivi_quotas", "tri_plat", "synthese", "aide"}
+    assert all(x["mutation"] is False for x in outils)
     s = a.get(f"/api/projets/{pid}/suivi").json()
     assert s["total_quota"] == 300 and s["total_realise"] == sum(li["realise"] for li in s["lignes"]) == 271   # 90 % par case, arrondi
     assert "non probabiliste" in s["mention"]
@@ -102,6 +105,40 @@ def test_suivi_agrege_et_croisement_avec_garde_fous(env: tuple[Config, str]) -> 
     assert r.status_code == 422 and r.json()["refuse"] and "base minimale" in r.json()["motif"]
     for corps in ({"ligne": "NUMFICHE", "colonne": "VILLEREG"}, {"ligne": "FREQACHA", "colonne": "VILLEREG", "filtre": "__import__('os')"}):
         assert a.post(f"/api/projets/{pid}/croisements", json=corps, headers=h).status_code == 422
+
+
+def test_assistant_utilise_des_outils_reels_et_fournit_les_preuves(env: tuple[Config, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATAA_OLLAMA_MODEL", raising=False)
+    cfg, _ = env
+    a = _client(cfg)
+    h = _connecter(a, "client_a")
+    pid = a.get("/api/projets").json()[0]["id"]
+
+    etat = a.post("/api/assistant", json={"question": "Résume l'état et les validations", "projet": pid}, headers=h)
+    assert etat.status_code == 200, etat.text
+    assert etat.json()["outil"] == "etat_etude"
+    assert etat.json()["redaction"] == "deterministe"
+    assert etat.json()["preuves"] and etat.json()["verification"]["lecture_seule"]
+
+    quotas = a.post("/api/assistant", json={"question": "Où en sont les quotas par ville ?", "projet": pid}, headers=h)
+    assert quotas.status_code == 200, quotas.text
+    assert quotas.json()["outil"] == "suivi_quotas" and "271 fiches réalisées sur 300 prévues" in quotas.json()["reponse"]
+    assert any(p["source"].startswith("quota.") for p in quotas.json()["preuves"])
+
+    tri = a.post("/api/assistant", json={"question": "Donne le tri à plat de Vous êtes", "projet": pid}, headers=h)
+    assert tri.status_code == 200, tri.text
+    assert tri.json()["outil"] == "tri_plat" and "base valide 271" in tri.json()["reponse"]
+    assert tri.json()["verification"]["publication_automatique"] is False
+
+    synthese = a.post("/api/assistant", json={"question": "Rédige une synthèse des priorités", "projet": pid}, headers=h)
+    assert synthese.status_code == 200, synthese.text
+    assert synthese.json()["outil"] == "synthese" and synthese.json()["preuves"]
+    assert synthese.json()["redaction"] == "deterministe"
+
+    b = _client(cfg)
+    hb = _connecter(b, "client_b")
+    interdit = b.post("/api/assistant", json={"question": "Résume l'état", "projet": pid}, headers=hb)
+    assert interdit.status_code == 404
 
 
 def test_plafond_de_croisements_de_la_formule(env: tuple[Config, str]) -> None:

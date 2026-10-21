@@ -23,6 +23,7 @@ import { UsineTerrain } from "./pages/UsineTerrain";
 import { UsineRecommandations } from "./pages/UsineRecommandations";
 import { Assistant } from "./pages/Assistant";
 import { UsineSynthese } from "./pages/UsineSynthese";
+import { TerrainMobile } from "./pages/TerrainMobile";
 
 type Session = { moi: Moi | null; definir: (m: Moi | null) => void };
 const ContexteSession = createContext<Session>({ moi: null, definir: () => undefined });
@@ -156,11 +157,12 @@ export function Application(): ReactNode {
     <ContexteApparence.Provider value={{ nuit, basculer }}>
     <ContexteSession.Provider value={{ moi, definir }}>
       <Routes>
+        <Route path="/terrain" element={<TerrainMobile />} />
         <Route path="/connexion" element={<Connexion />} />
         <Route path="/" element={<Protege enfants={<ClientAccueil />} />} />
         <Route path="/projets/:id" element={<Protege enfants={<ClientProjet />} />} />
         <Route path="/brief" element={<Protege enfants={<Brief />} />} />
-        <Route path="/assistant" element={<Protege enfants={<Assistant />} />} />
+        <Route path="/assistant" element={<Protege enfants={<Assistant usine={estUsine(moi)} />} />} />
         <Route path="/usine" element={<Protege usine enfants={<UsineProjets />} />} />
         <Route path="/usine/operations" element={<Protege usine enfants={<UsineOperations />} />} />
         <Route path="/usine/connexions" element={<Protege usine enfants={<UsineConnexions />} />} />
