@@ -115,7 +115,7 @@ test("usine : double authentification, cohérence, documents, partage, facture, 
   await expect(u.getByRole("button", { name: "Retirer BADGES.docx" })).toBeVisible();
 
   await u.getByRole("link", { name: "Facturation" }).click();
-  await u.getByLabel("Client").selectOption({ label: "Client A (fictif)" });
+  await u.getByLabel("Client", { exact: true }).selectOption({ label: "Client A (fictif)" });
   await u.getByLabel("Libellé").fill("Étude fictive — acompte");
   await u.getByLabel("Montant HT (FCFA)").fill("500000");
   await u.getByRole("button", { name: "Émettre" }).click();
@@ -155,4 +155,17 @@ test("usine : création d'un client et refus d'un mot de passe faible", async ({
   await page.getByRole("button", { name: "Créer le client" }).click();
   await expect(page.getByRole("status")).toContainText("Client « Client D (fictif) » créé.");
   await expect(page.getByRole("table", { name: "Organisations" }).getByText("Client D (fictif)")).toBeVisible();
+});
+
+test("navigation client : recherche filtre et ouvre un module", async ({ page }) => {
+  await connecter(page, COMPTES.a);
+  const recherche = page.getByRole("searchbox", { name: "Rechercher un module" });
+  await recherche.fill("brief");
+  const navigation = page.getByRole("navigation", { name: "Navigation Études" });
+  const lienBrief = navigation.getByRole("link", { name: "Nouveau brief" });
+  await expect(lienBrief).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Mes études" })).toHaveCount(0);
+
+  await lienBrief.click();
+  await expect(page.getByRole("heading", { name: "Nouveau brief" })).toBeVisible();
 });

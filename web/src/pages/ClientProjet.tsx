@@ -151,7 +151,7 @@ function Livrables({ id }: { id: string }): ReactNode {
   );
 }
 
-export function ClientProjet(): ReactNode {
+export function ClientProjet({ lectureSeule = false }: { lectureSeule?: boolean }): ReactNode {
   const { id = "" } = useParams();
   const [onglet, setOnglet] = useState<"suivi" | "croisements" | "livrables">("suivi");
   const [nom, setNom] = useState("");
@@ -170,13 +170,13 @@ export function ClientProjet(): ReactNode {
       <h1>{nom}</h1>
       <p className="sous-titre">{statut === "livre" ? <Badge ton="ok">Livrée</Badge> : statut && <Badge ton="info">{statut}</Badge>}</p>
       <div className="onglets" role="tablist">
-        {(["suivi", "croisements", "livrables"] as const).map((o) => (
+        {(["suivi", ...(!lectureSeule ? ["croisements" as const] : []), "livrables"] as const).map((o) => (
           <button key={o} role="tab" aria-selected={onglet === o} onClick={() => setOnglet(o)}>
             {o === "suivi" ? "Suivi du terrain" : o === "croisements" ? "Croisements" : "Livrables"}
           </button>))}
       </div>
       {onglet === "suivi" && <SuiviTerrain id={id} />}
-      {onglet === "croisements" && <Croisements id={id} />}
+      {!lectureSeule && onglet === "croisements" && <Croisements id={id} />}
       {onglet === "livrables" && <Livrables id={id} />}
     </>
   );

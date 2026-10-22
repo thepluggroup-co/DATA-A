@@ -65,6 +65,24 @@ def test_deux_clients_isoles(env: tuple[Config, str]) -> None:
     assert len(a.get("/api/factures").json()) == 1 and b.get("/api/factures").json() == []
 
 
+def test_client_lecteur_consulte_sans_facturation_ni_croisement(env: tuple[Config, str]) -> None:
+    cfg, _ = env
+    lecteur = _client(cfg)
+    identifiants = lecteur.post("/api/auth/connexion", json={
+        "email": demo.COMPTES["lecteur_a"], "mot_de_passe": demo.MDP_DEMO,
+    })
+    assert identifiants.status_code == 200
+    assert identifiants.json()["permissions"] == ["projet.lire"]
+    headers = {"X-CSRF-Token": identifiants.json()["csrf"]}
+    projet = lecteur.get("/api/projets").json()[0]
+
+    assert lecteur.get(f"/api/projets/{projet['id']}/livrables").status_code == 200
+    assert lecteur.get("/api/abonnement").status_code == 403
+    assert lecteur.get("/api/factures").status_code == 403
+    assert lecteur.post(f"/api/projets/{projet['id']}/croisements",
+                        json={"ligne": "FREQACHA", "colonne": "VILLEREG"}, headers=headers).status_code == 403
+
+
 def test_rls_dans_la_base_meme_sans_filtre_applicatif(env: tuple[Config, str]) -> None:
     """Défense en profondeur : avec le rôle applicatif, une requête SANS filtre ne voit que l'organisation du contexte."""
     cfg, _ = env

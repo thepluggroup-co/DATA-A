@@ -28,6 +28,8 @@ ROLES_CLIENT = {"client_admin", "client_lecteur"}
 ROLES_ENQUETEUR = {"enqueteur"}
 
 PERMISSIONS_PAR_ROLE: dict[str, frozenset[str]] = {
+    "client_admin": frozenset({"projet.lire", "brief.creer", "croisement.executer", "facturation.lire"}),
+    "client_lecteur": frozenset({"projet.lire"}),
     "cabinet_admin": frozenset({"equipe.lire", "equipe.ecrire", "projet.piloter", "terrain.deployer", "analyse.valider", "facturation.gerer"}),
     "cabinet_operateur": frozenset({"equipe.lire", "projet.piloter", "terrain.deployer", "facturation.gerer"}),
     "consultant_junior": frozenset({"projet.lire", "terrain.superviser", "qualite.signaler"}),

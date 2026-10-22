@@ -16,7 +16,7 @@ const connexions: Connexion[] = [
 export function UsineConnexions(): ReactNode {
   return (
     <>
-      <EnTete titre="Packages de connexion" sous_titre="Centre de contrôle des dépendances, identités, données et services externes de DATA’A." />
+            <EnTete titre="Packages de connexion" sous_titre="Centre de contrôle des dépendances, identités, données et services externes de DATA’A." />
       <div className="kpis">
         <div className="kpi"><div className="etiquette">Connexions actives</div><div className="valeur">{connexions.filter((x) => x.etat === "Actif").length}</div></div>
         <div className="kpi"><div className="etiquette">Prêtes à brancher</div><div className="valeur">{connexions.filter((x) => x.etat === "Prêt").length}</div></div>

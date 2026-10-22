@@ -366,6 +366,8 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.post("/api/projets/{ident}/croisements")
     def croisement(ident: str, d: DemandeCroisement, c: Client, s: BD) -> JSONResponse:
+        if not c.usine and "croisement.executer" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour calculer un croisement")
         p = _projet(s, ident)
         if not p.base_analyse:
             raise HTTPException(409, "base d'analyse non livrÃ©e")
@@ -393,6 +395,8 @@ def creer_app(cfg: Config) -> FastAPI:
     def export_croisement(ident: str, num: int, c: Client, s: BD) -> StreamingResponse:
         from openpyxl import Workbook
 
+        if not c.usine and "croisement.executer" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour exporter un croisement")
         p = _projet(s, ident)
         cb = s.get(CroisementBD, num)
         if cb is None or cb.projet_id != p.id or cb.refuse:
@@ -442,7 +446,7 @@ def creer_app(cfg: Config) -> FastAPI:
     def nouveau_brief(d: NouveauBrief, c: Client, s: BD) -> dict[str, Any]:
         from plateforme.projet.brief import Brief, charger_tarifs, pre_estimation
 
-        if c.utilisateur.role not in {"client_admin"} | securite.ROLES_USINE:
+        if not c.usine and "brief.creer" not in securite.permissions(c.utilisateur.role):
             raise HTTPException(403, "seul l'administrateur du client dÃ©pose un brief")
         code = "BRIEF_" + uuid.uuid4().hex[:8].upper()
         brief = Brief.model_validate({"etude": code, "version": "01", "titre": d.titre, "besoin": d.besoin,
@@ -475,10 +479,14 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.get("/api/abonnement")
     def abonnement(c: Client, s: BD) -> dict[str, Any]:
+        if not c.usine and "facturation.lire" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour consulter l'abonnement")
         return {**_droits(s, c.organisation.id), "croisements_ce_mois": _croisements_du_mois(s, c.organisation.id)}
 
     @app.get("/api/factures")
     def factures(c: Client, s: BD) -> list[dict[str, Any]]:
+        if not c.usine and "facturation.lire" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour consulter les factures")
         q = select(Facture).order_by(Facture.emise_le)
         if not c.usine:
             q = q.where(Facture.organisation_id == c.organisation.id)

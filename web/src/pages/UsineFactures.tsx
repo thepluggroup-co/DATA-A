@@ -44,7 +44,7 @@ export function UsineFactures(): ReactNode {
   };
   return (
     <>
-      <EnTete titre="Facturation" sous_titre="Factures, encaissements (virement ou Mobile Money hors ligne) et suivi des soldes." />
+            <EnTete titre="Facturation" sous_titre="Factures, encaissements (virement ou Mobile Money hors ligne) et suivi des soldes." />
       <div className="kpis">
         <Kpi icone="facture" etiquette="Factures" valeur={factures.length} />
         <Kpi icone="argent" etiquette="Encaissé" valeur={fcfa(factures.filter((f) => f.statut === "payee").reduce((s, f) => s + f.montant_ht, 0))} />

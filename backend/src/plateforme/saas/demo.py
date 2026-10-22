@@ -1,9 +1,9 @@
-﻿"""Jeu de dÃ©monstration ENTIÃˆREMENT FICTIF : une usine (TOTP), deux clients isolÃ©s (A et B), leurs projets bÃ¢tis sur le
-projet fictif Â« 3 villes Â» (phase 6), des bases d'analyse SYNTHÃ‰TIQUES (rÃ©ponses tirÃ©es au hasard, graine fixe, aucune
-personne rÃ©elle), des formules d'abonnement aux montants fictifs et une facture.
+﻿"""Jeu de démonstration ENTIÈREMENT FICTIF : une usine (TOTP), deux clients isolés (A et B), leurs projets bâtis sur le
+projet fictif « 3 villes » (phase 6), des bases d'analyse SYNTHÉTIQUES (réponses tirées au hasard, graine fixe, aucune
+personne réelle), des formules d'abonnement aux montants fictifs et une facture.
 
-Identifiants : adresses en Â« .invalid Â» (domaine rÃ©servÃ©, RFC 2606) ; mots de passe et secret TOTP de dÃ©monstration,
-publiÃ©s ici, donc Ã  ne JAMAIS utiliser hors dÃ©monstration.
+Identifiants : adresses en « .invalid » (domaine réservé, RFC 2606) ; mots de passe et secret TOTP de démonstration,
+publiés ici, donc à ne JAMAIS utiliser hors démonstration.
 """
 
 from __future__ import annotations
@@ -25,19 +25,20 @@ from plateforme.stockage.modeles import Abonnement, Facture, Formule, Livrable, 
 
 RACINE = Path(__file__).resolve().parents[4]
 DEMO = RACINE / "projets" / "demo_3_villes"
-MDP_DEMO = "Demo-DATAA-2026"                      # dÃ©monstration uniquement
-TOTP_DEMO = "JBSWY3DPEHPK3PXP"                    # secret TOTP de dÃ©monstration (exemple RFC, public)
+MDP_DEMO = "Demo-DATAA-2026"                      # démonstration uniquement
+TOTP_DEMO = "JBSWY3DPEHPK3PXP"                    # secret TOTP de démonstration (exemple RFC, public)
 CODE_MISSION_DEMO = "DEMO-ENQ1-A2026-FICTIF"   # mission de dÃ©monstration (poste ENQ1 du client A), publique
-COMPTES = {"usine": "usine@demo.invalid", "client_a": "admin@client-a.demo.invalid", "client_b": "admin@client-b.demo.invalid"}
+COMPTES = {"usine": "usine@demo.invalid", "client_a": "admin@client-a.demo.invalid", "lecteur_a": "lecteur@client-a.demo.invalid",
+           "client_b": "admin@client-b.demo.invalid"}
 
 FORMULES = [
-    {"code": "acces_credits", "nom": "AccÃ¨s + crÃ©dits d'Ã©tudes", "type": "acces_credits",
+    {"code": "acces_credits", "nom": "Accès + crédits d'études", "type": "acces_credits",
      "prix": {"abonnement_mensuel": 150000, "credit_par_fiche": 2500, "fictif": True},
      "droits": {"projets": 10, "villes": 10, "utilisateurs": 5, "croisements_par_mois": 50, "formats": ["docx", "pdf", "pptx", "xlsx", "sav"]}},
-    {"code": "forfait", "nom": "Ã€ l'Ã©tude (forfait)", "type": "forfait",
-     "prix": {"devis": "calculÃ© depuis les plans (marge des tarifs)", "fictif": True},
+    {"code": "forfait", "nom": "À l'étude (forfait)", "type": "forfait",
+     "prix": {"devis": "calculé depuis les plans (marge des tarifs)", "fictif": True},
      "droits": {"projets": 1, "villes": 5, "utilisateurs": 2, "croisements_par_mois": 3, "formats": ["docx", "pdf", "xlsx"]}},
-    {"code": "barometre", "nom": "BaromÃ¨tre (vagues rÃ©currentes)", "type": "barometre",
+    {"code": "barometre", "nom": "Baromètre (vagues récurrentes)", "type": "barometre",
      "prix": {"par_vague": 1200000, "fictif": True},
      "droits": {"projets": 4, "villes": 10, "utilisateurs": 5, "croisements_par_mois": 100, "formats": ["docx", "pdf", "pptx", "xlsx", "sav"]}},
 ]
@@ -50,8 +51,8 @@ class Demo:
 
 
 def base_synthetique(dossier_projet: Path, chemin_sav: Path, graine: int, taux: float = 0.9) -> int:
-    """Base d'analyse synthÃ©tique : pour chaque quota cible Ã— ville, `taux` Ã— quota fiches, rÃ©ponses tirÃ©es au hasard
-    dans les modalitÃ©s du dictionnaire (graine fixe). Aucune donnÃ©e rÃ©elle ; Ã©tiquettes reprises du dictionnaire."""
+    """Base d'analyse synthétique : pour chaque quota cible × ville, `taux` × quota fiches, réponses tirées au hasard
+    dans les modalités du dictionnaire (graine fixe). Aucune donnée réelle ; étiquettes reprises du dictionnaire."""
     import pandas as pd
     import pyreadstat
 
@@ -67,11 +68,11 @@ def base_synthetique(dossier_projet: Path, chemin_sav: Path, graine: int, taux: 
                 ligne: dict[str, object] = {"NUMFICHE": f"{v.prefixe}-DEMO-{len(lignes) + 1:04d}", pe.variable_cible: q.code, qv.code: v.code}
                 for x in autres:
                     codes = [m.code for m in x.modalites]
-                    poids = [1 + (k * (q.code + v.code)) % 3 for k in range(len(codes))]   # profils diffÃ©rents par cible et ville
+                    poids = [1 + (k * (q.code + v.code)) % 3 for k in range(len(codes))]   # profils différents par cible et ville
                     ligne[x.code] = hasard.choices(codes, weights=poids)[0]
                 lignes.append(ligne)
     df = pd.DataFrame(lignes)
-    etiquettes: dict[str, str | None] = {"NUMFICHE": "NÂ° de fiche", qv.code: d.texte(qv.libelles)}
+    etiquettes: dict[str, str | None] = {"NUMFICHE": "N° de fiche", qv.code: d.texte(qv.libelles)}
     valeurs = {}
     for x in [*autres, qv, *(q for q in d.questions if q.code == pe.variable_cible)]:
         etiquettes[x.code] = d.texte(x.libelles)
@@ -99,16 +100,17 @@ def _copier_projet(stockage: Path, org: uuid.UUID, code: str) -> str:
 
 
 def semer(s: Session, stockage: Path) -> Demo:
-    """Ã€ exÃ©cuter avec le rÃ´le propriÃ©taire (hors RLS), sur une base migrÃ©e et vide."""
+    """À exécuter avec le rôle propriétaire (hors RLS), sur une base migrée et vide."""
     hache = securite.hacher(MDP_DEMO)
-    usine = Organisation(nom="THE PLUG â€” usine (dÃ©monstration)", type="usine")
+    usine = Organisation(nom="THE PLUG — usine (démonstration)", type="usine")
     a, b = Organisation(nom="Client A (fictif)", type="client"), Organisation(nom="Client B (fictif)", type="client")
     s.add_all([usine, a, b])
     s.flush()
-    s.add_all([Utilisateur(organisation_id=usine.id, email=COMPTES["usine"], nom="OpÃ©rateur usine (dÃ©mo)", role="usine_admin",
-                           hash_mdp=hache, totp_secret=None),
-               Utilisateur(organisation_id=a.id, email=COMPTES["client_a"], nom="Administrateur A (dÃ©mo)", role="client_admin", hash_mdp=hache),
-               Utilisateur(organisation_id=b.id, email=COMPTES["client_b"], nom="Administrateur B (dÃ©mo)", role="client_admin", hash_mdp=hache)])
+    s.add_all([Utilisateur(organisation_id=usine.id, email=COMPTES["usine"], nom="Opérateur usine (démo)", role="usine_admin",
+                           hash_mdp=hache, totp_secret=TOTP_DEMO),
+               Utilisateur(organisation_id=a.id, email=COMPTES["client_a"], nom="Administrateur A (démo)", role="client_admin", hash_mdp=hache),
+               Utilisateur(organisation_id=a.id, email=COMPTES["lecteur_a"], nom="Lecteur A (démo)", role="client_lecteur", hash_mdp=hache),
+               Utilisateur(organisation_id=b.id, email=COMPTES["client_b"], nom="Administrateur B (démo)", role="client_admin", hash_mdp=hache)])
     formules = {f["code"]: Formule(**f) for f in FORMULES}
     s.add_all(formules.values())
     s.flush()
@@ -119,7 +121,7 @@ def semer(s: Session, stockage: Path) -> Demo:
         rel = _copier_projet(stockage, org.id, code)
         sav = Path(rel) / "base" / "BASE_ANALYSE_DEMO.sav"
         base_synthetique(stockage / rel, stockage / sav, graine)
-        p = Projet(organisation_id=org.id, code=code, nom=f"Achats de fournitures scolaires â€” {org.nom}", statut="livre",
+        p = Projet(organisation_id=org.id, code=code, nom=f"Achats de fournitures scolaires — {org.nom}", statut="livre",
                    dossier=rel, base_analyse=str(sav), parametres={"garde": {"base_min": base_min, "k": 5}})
         s.add(p)
         s.flush()
@@ -129,7 +131,7 @@ def semer(s: Session, stockage: Path) -> Demo:
     from plateforme.stockage.modeles import Mission
 
     s.add(Mission(organisation_id=a.id, projet_id=projets["DEMO_A"], enqueteur="ENQ1", code_empreinte=empreinte_code(CODE_MISSION_DEMO)))
-    s.add(Facture(organisation_id=a.id, numero=f"F-{date.today().year}-0001", lignes=[["Abonnement AccÃ¨s + crÃ©dits (fictif)", 150000]],
+    s.add(Facture(organisation_id=a.id, numero=f"F-{date.today().year}-0001", lignes=[["Abonnement Accès + crédits (fictif)", 150000]],
                   montant_ht=Decimal("150000")))
-    audit.journaliser(s, "demo_initialisee", "jeu de dÃ©monstration fictif")
+    audit.journaliser(s, "demo_initialisee", "jeu de démonstration fictif")
     return Demo({"usine": usine.id, "client_a": a.id, "client_b": b.id}, projets)

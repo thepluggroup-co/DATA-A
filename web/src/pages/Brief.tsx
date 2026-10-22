@@ -39,7 +39,7 @@ export function Brief(): ReactNode {
   };
   return (
     <>
-      <EnTete titre="Nouveau brief" sous_titre="Décrivez votre besoin : la plateforme pré-estime l'échantillon, les enquêteurs, les jours et le coût de collecte ; l'équipe DATA'A valide ensuite le devis." />
+            <EnTete titre="Nouveau brief" sous_titre="Décrivez votre besoin : la plateforme pré-estime l'échantillon, les enquêteurs, les jours et le coût de collecte ; l'équipe DATA'A valide ensuite le devis." />
       {erreur && <p className="erreur" role="alert">{erreur}</p>}
       {envoye ? (
         <div className="succes" role="status">
