@@ -1,7 +1,0 @@
-2026-10-20 22:59:01.108 WAT [37972] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
-2026-10-20 22:59:01.110 WAT [37972] LOG:  listening on IPv4 address "127.0.0.1", port 55986
-2026-10-20 22:59:01.196 WAT [55116] LOG:  database system was shut down at 2026-10-20 22:58:55 WAT
-2026-10-20 22:59:01.232 WAT [37972] LOG:  database system is ready to accept connections
-2026-10-20 22:59:01.604 WAT [7940] FATAL:  role "anaky" does not exist
-2026-10-20 22:59:08.369 WAT [31984] FATAL:  terminating connection due to unexpected postmaster exit
-2026-10-20 22:59:08.369 WAT [32896] FATAL:  terminating connection due to unexpected postmaster exit

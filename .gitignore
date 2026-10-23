@@ -18,3 +18,11 @@ dist/
 
 # Sorties générées (reproductibles par la ligne de commande)
 sorties/
+
+.tmp-*/
+**/.pytest-tmp/
+**/.e2e-tmp/
+**/.assistant-e2e-tmp/
+test-results/
+*.tsbuildinfo
+*.log

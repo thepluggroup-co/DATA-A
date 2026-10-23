@@ -1,5 +1,0 @@
-2026-10-20 22:48:20.184 WAT [64072] LOG:  starting PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit
-2026-10-20 22:48:20.186 WAT [64072] LOG:  listening on IPv4 address "127.0.0.1", port 58277
-2026-10-20 22:48:20.287 WAT [13940] LOG:  database system was shut down at 2026-10-20 22:48:12 WAT
-2026-10-20 22:48:20.341 WAT [64072] LOG:  database system is ready to accept connections
-2026-10-20 22:48:20.750 WAT [10252] FATAL:  role "anaky" does not exist

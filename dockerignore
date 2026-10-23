@@ -1,0 +1,32 @@
+.git
+.gitignore
+
+# Déchets de test et dépôts tiers embarqués
+.tmp-*
+**/.pytest-tmp
+**/.e2e-tmp
+**/.assistant-e2e-tmp
+**/test-results
+
+# Générés localement
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/dist
+**/*.tsbuildinfo
+**/*.log
+
+# Jamais dans l'image
+reference/prive
+**/.env
+**/.env.*
+*.sav
+
+# Inutile à l'exécution
+docs
+backend/tests
+web/e2e
+demo_dataa.cmd
