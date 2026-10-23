@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REMPLACER-PAR-VOTRE-DOMAINE-RAILWAY.up.railway.app/api/:path*"
+      "destination": "https://intuitive-adaptation-dataa.up.railway.app"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
