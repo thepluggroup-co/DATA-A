@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import { useSession } from "../App";
 import { Badge, EnTete, Kpi } from "../ui";
 import { TableauCroise } from "./TableauCroise";
 
@@ -8,6 +9,10 @@ type Projet = { id: string; code: string; nom: string; statut: string; organisat
 type Workflow = { etape: string; statut: string; historique: { etape: string }[] };
 
 export function UsineAnalyses(): ReactNode {
+  const { moi } = useSession();
+  const droits = moi?.permissions ?? [];
+  const superviseur = droits.includes("analyse.superviser");
+  const validateur = droits.includes("analyse.valider") || droits.includes("livraison.valider");
   const [lignes, setLignes] = useState<{ projet: Projet; workflow: Workflow }[]>([]);
   const [erreur, setErreur] = useState("");
   const [methode, setMethode] = useState("tri_plat");
@@ -29,10 +34,9 @@ export function UsineAnalyses(): ReactNode {
   const compte = (etape: string): number => lignes.filter((x) => x.workflow.etape === etape).length;
   return <>
         <EnTete titre="Analyses & validations" sous_titre="Pilotage senior et expert : programmer, superviser, valider et livrer les résultats." />
-    {erreur && <p className="erreur" role="alert">{erreur}</p>}<TableauCroise projets={lignes.map(({ projet }) => projet)} />
+    {erreur && <p className="erreur" role="alert">{erreur}</p>}{!erreur && <div className="kpis">{superviseur && <Kpi icone="fiches" etiquette="À superviser" valeur={compte("senior")} detail="retour consultant junior" />}{validateur && <Kpi icone="croisement" etiquette="À valider" valeur={compte("expert")} detail="validation expert attendue" />}{validateur && <Kpi icone="bouclier" etiquette="Validations" valeur={lignes.reduce((t, x) => t + x.workflow.historique.length, 0)} detail="étapes enregistrées" />}<Kpi icone="etudes" etiquette="Livrées" valeur={compte("livre")} detail={`sur ${lignes.length} étude(s)`} /></div>}<TableauCroise projets={lignes.map(({ projet }) => projet)} />
     <section className="atelier-analyse panneau"><h2>Atelier d’analyse</h2><p className="sous-titre">Configurez une procédure reproductible avant validation.</p><div className="atelier-grille"><label>Étude<select value={projetId} onChange={(e) => { setProjetId(e.target.value); chargerProcedures(e.target.value); chargerVariables(e.target.value); }}><option value="">Première étude disponible</option>{lignes.map((x) => <option key={x.projet.id} value={x.projet.id}>{x.projet.nom}</option>)}</select></label><label>Variable<select value={variable} onChange={(e) => setVariable(e.target.value)}>{variables.length ? variables.map((v) => <option key={v.nom} value={v.nom}>{v.label || v.nom}</option>) : <option value="cible">cible</option>}</select></label><label>Méthode<select value={methode} onChange={(e) => setMethode(e.target.value)}><option value="tri_plat">Tri à plat</option><option value="croisement">Tableau croisé</option><option value="comparaison">Comparaison</option><option value="regression">Régression</option><option value="acp">ACP</option><option value="classification">K-moyennes</option></select></label><button onClick={executer}>Enregistrer la procédure</button><button className="secondaire" onClick={chargerTriPlat}>Exécuter le tri à plat</button></div>{resultat && <p className="succes" role="status">{resultat}</p>}{triPlat && <div className="tableau"><p>Base : <strong>{triPlat.base}</strong></p><table aria-label="Résultat tri à plat"><thead><tr><th>Modalité</th><th>Effectif</th><th>%</th></tr></thead><tbody>{triPlat.lignes.map((l) => <tr key={l.modalite}><td>{l.modalite}</td><td>{l.effectif}</td><td>{l.pourcentage}%</td></tr>)}</tbody></table></div>}</section>
     {procedures.length > 0 && <section className="panneau"><h2>Procédures enregistrées</h2><div className="cartes-modules">{procedures.map((a) => <article className="carte-module" key={a.id}><strong>{a.methode}</strong><Badge ton="alerte">À valider</Badge><p className="mention">{a.auteur} · {new Date(a.le).toLocaleString("fr-FR")}</p></article>)}</div></section>}
-    <div className="kpis"><Kpi icone="fiches" etiquette="À superviser" valeur={compte("senior")} detail="retour consultant junior" /><Kpi icone="croisement" etiquette="À analyser" valeur={compte("expert")} detail="validation expert attendue" /><Kpi icone="bouclier" etiquette="Validations" valeur={lignes.reduce((s, x) => s + x.workflow.historique.length, 0)} /><Kpi icone="etudes" etiquette="Livrées" valeur={compte("livre")} /></div>
     <div className="tableau"><table aria-label="Workflow des analyses"><thead><tr><th>Étude</th><th>Client</th><th>Étape</th><th>Historique</th><th /></tr></thead><tbody>
       {lignes.length === 0 && <tr><td colSpan={5} className="vide">Aucune étude à afficher.</td></tr>}
       {lignes.map(({ projet, workflow }) => <tr key={projet.id}><td><strong>{projet.nom}</strong><br /><code>{projet.code}</code></td><td>{projet.organisation}</td><td>{workflow.etape === "livre" ? <Badge ton="ok">Livrée</Badge> : workflow.etape === "expert" ? <Badge ton="info">Expert</Badge> : workflow.etape === "senior" ? <Badge ton="alerte">Senior</Badge> : <Badge ton="neutre">Junior</Badge>}</td><td>{workflow.historique.length} validation(s)</td><td><Link className="bouton" to="/usine">Ouvrir l’étude</Link></td></tr>)}
