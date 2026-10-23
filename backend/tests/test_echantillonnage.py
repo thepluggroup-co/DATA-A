@@ -65,3 +65,16 @@ def test_capacite_insuffisante_signalee(tmp_path: Path) -> None:
     terrain = plan_terrain.charger(PROJET_EDM / "plan_terrain.yaml").model_copy(update={"objectif_jour": 15})
     messages = verifier(pe, terrain)
     assert "BAFOUSSAM : capacité 90 fiches pour un quota de 100 (manque 10)" in messages
+
+
+def test_plan_aller_retour_fichier(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from plateforme.echantillonnage.plan import Methode, ParametresTaille, PlanEchantillonnage, Quota, charger, enregistrer
+
+    plan = PlanEchantillonnage(
+        etude="Étude test", version="02", methode=Methode.QUOTAS, variable_cible="VOUSETES",
+        taille=ParametresTaille(marge=0.05),
+        quotas=[Quota(code=1, cible="Particulier", villes={"DOUALA": 35, "YAOUNDE": 35}),
+                Quota(code=2, cible="Entreprise", villes={"DOUALA": 10, "YAOUNDE": 20})])
+    chemin = tmp_path / "plan.yaml"
+    enregistrer(plan, chemin)
+    assert charger(chemin) == plan

@@ -160,6 +160,19 @@ class VersionProjet(BaseModel):
     source: str = Field(default="", max_length=2000)
 
 
+class QuotaEntree(BaseModel):
+    code: int
+    cible: str = Field(min_length=1, max_length=120)
+    villes: dict[str, int] = Field(max_length=100)
+
+
+class PlanEchantillonnageEntree(BaseModel):
+    version: str = Field(max_length=20, description="Version lue : refus si le plan a changé entre-temps")
+    methode: str = Field(pattern=r"^(quotas|aleatoire|stratifie)$")
+    taille: dict[str, Any] | None = None
+    quotas: list[QuotaEntree] = Field(min_length=1, max_length=50)
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
@@ -721,6 +734,72 @@ def creer_app(cfg: Config) -> FastAPI:
         except (FileNotFoundError, ValueError, KeyError) as e:
             return {"coherent": False, "ecarts": [f"projet incomplet : {e}"]}
         return {"coherent": not ecarts, "ecarts": ecarts}
+
+    def _plan_echantillonnage(cfg_: Config, p: Projet) -> tuple[Any, Any, Path]:
+        from plateforme.projet import projet as pj
+
+        if not p.dossier:
+            raise HTTPException(409, "dossier de projet absent")
+        dossier = chemin_sur(cfg_, p.dossier)
+        try:
+            pr = pj.charger(dossier)
+            plan = pr.exiger_echantillonnage()
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise HTTPException(409, f"projet incomplet : {e}") from e
+        return pr, plan, chemin_sur(cfg_, str(Path(p.dossier) / pr.manifeste.plan_echantillonnage))
+
+    def _vue_plan_echantillonnage(pr: Any, plan: Any) -> dict[str, Any]:
+        from plateforme.echantillonnage import plan as pe
+        from plateforme.projet import projet as pj
+
+        taille_calculee = pe.taille_echantillon(plan.taille) if plan.taille is not None else None
+        marge = None
+        if plan.taille is not None and plan.methode is not pe.Methode.QUOTAS and plan.total() > 0:
+            marge = round(pe.marge_obtenue(plan.total(), plan.taille.proportion, plan.taille.confiance, plan.taille.effet_plan), 4)
+        capacites = []
+        if pr.terrain is not None:
+            capacites = [{**c.model_dump(), "ecart": c.ecart} for c in pe.capacite(plan, pr.terrain)]
+        return {"etude": plan.etude, "version": plan.version, "methode": plan.methode.value, "variable_cible": plan.variable_cible,
+                "mention": plan.mention(), "villes": plan.villes, "total": plan.total(), "par_ville": plan.par_ville(),
+                "quotas": [q.model_dump() for q in plan.quotas],
+                "taille": plan.taille.model_dump() if plan.taille else None, "taille_calculee": taille_calculee,
+                "marge_indicative": marge, "capacites": capacites, "ecarts": pj.verifier(pr)}
+
+    @app.get("/api/usine/projets/{ident}/echantillonnage")
+    def usine_echantillonnage(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        pr, plan, _ = _plan_echantillonnage(cfg, _projet(s, ident))
+        return _vue_plan_echantillonnage(pr, plan)
+
+    @app.put("/api/usine/projets/{ident}/echantillonnage")
+    def usine_echantillonnage_enregistrer(ident: str, d: PlanEchantillonnageEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from pydantic import ValidationError
+
+        from plateforme.echantillonnage import plan as pe
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        if "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour modifier le plan d'échantillonnage")
+        p = _projet(s, ident)
+        pr, plan, fichier = _plan_echantillonnage(cfg, p)
+        if d.version != plan.version:
+            raise HTTPException(409, f"le plan est maintenant en version {plan.version} (vous avez chargé la {d.version}) : rechargez la page")
+        nb_fiches = s.scalar(select(func.count()).select_from(MetaFiche).where(MetaFiche.projet_id == p.id)) or 0
+        if nb_fiches:
+            raise HTTPException(409, f"collecte commencée ({nb_fiches} fiche(s)) : le plan ne peut plus être modifié")
+        suivante = f"{int(plan.version) + 1:02d}" if plan.version.isdigit() else f"{plan.version}.1"
+        try:
+            nouveau = pe.PlanEchantillonnage.model_validate({
+                "etude": plan.etude, "version": suivante, "methode": d.methode, "variable_cible": plan.variable_cible,
+                "taille": d.taille, "quotas": [q.model_dump() for q in d.quotas], "parametres_qualite": plan.parametres_qualite})
+        except ValidationError as e:
+            raise HTTPException(422, "plan invalide : " + " ; ".join(x["msg"] for x in e.errors())) from e
+        pe.enregistrer(nouveau, fichier)
+        audit.journaliser(s, "plan_echantillonnage_modifie", p.code,
+                          {"ancienne": plan.version, "nouvelle": suivante, "total": nouveau.total(), "methode": d.methode},
+                          p.organisation_id, c.utilisateur.id)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        return _vue_plan_echantillonnage(pr, pr.exiger_echantillonnage())
 
     @app.post("/api/usine/projets/{ident}/documents")
     def usine_documents(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:

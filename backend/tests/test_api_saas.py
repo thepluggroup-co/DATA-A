@@ -306,3 +306,30 @@ def test_nettoyage_epargne_un_serveur_vivant(tmp_path: Path, monkeypatch: pytest
     pt.arreter_orphelins()
     assert vivant.exists() and not mort.exists()
     assert pt.processus_vivant(os.getpid()) and not pt.processus_vivant(999999999)
+
+
+def test_usine_plan_echantillonnage_lecture_ecriture(env: tuple[Config, str]) -> None:
+    cfg, _ = env
+    u, a = _client(cfg), _client(cfg)
+    hu, _ = _connecter(u, "usine"), _connecter(a, "client_a")
+    pid = next(p["id"] for p in u.get("/api/usine/projets").json() if p["code"] == "DEMO_A")
+    assert a.get(f"/api/usine/projets/{pid}/echantillonnage").status_code == 403          # un client n'entre pas à l'usine
+    plan = u.get(f"/api/usine/projets/{pid}/echantillonnage").json()
+    assert plan["total"] > 0 and plan["villes"] and plan["quotas"] and plan["ecarts"] == []
+    corps = {"version": plan["version"], "methode": plan["methode"], "taille": plan["taille"], "quotas": plan["quotas"]}
+    # nombre négatif : refusé par le modèle du domaine, rien n'est écrit
+    mauvais = {**corps, "quotas": [{**plan["quotas"][0], "villes": {v: -1 for v in plan["villes"]}}, *plan["quotas"][1:]]}
+    assert u.put(f"/api/usine/projets/{pid}/echantillonnage", json=mauvais, headers=hu).status_code == 422
+    assert u.get(f"/api/usine/projets/{pid}/echantillonnage").json()["version"] == plan["version"]
+    # déplacement d'un quota d'une ville à l'autre : total inchangé, version incrémentée
+    q0 = dict(plan["quotas"][0])
+    v1, v2 = plan["villes"][0], plan["villes"][1]
+    assert q0["villes"][v1] > 0
+    q0["villes"] = {**q0["villes"], v1: q0["villes"][v1] - 1, v2: q0["villes"][v2] + 1}
+    r = u.put(f"/api/usine/projets/{pid}/echantillonnage", json={**corps, "quotas": [q0, *plan["quotas"][1:]]}, headers=hu)
+    assert r.status_code == 200, r.text
+    nouveau = r.json()
+    assert nouveau["total"] == plan["total"] and nouveau["version"] != plan["version"]
+    assert nouveau["par_ville"][v1] == plan["par_ville"][v1] - 1
+    # version périmée : refus
+    assert u.put(f"/api/usine/projets/{pid}/echantillonnage", json=corps, headers=hu).status_code == 409

@@ -103,6 +103,24 @@ def charger(chemin: str | Path) -> PlanEchantillonnage:
     return PlanEchantillonnage.model_validate({**brut, "quotas": quotas})
 
 
+def vers_dict(plan: PlanEchantillonnage) -> dict[str, Any]:
+    """Format YAML du plan (celui que lit `charger`) : un aller-retour charger → vers_dict → charger est sans perte."""
+    out: dict[str, Any] = {"etude": plan.etude, "version": plan.version, "methode": plan.methode.value,
+                           "variable_cible": plan.variable_cible}
+    if plan.taille is not None:
+        out["taille"] = plan.taille.model_dump()
+    out["quotas"] = {q.code: {"cible": q.cible, **q.villes} for q in plan.quotas}
+    if plan.parametres_qualite:
+        out["parametres_qualite"] = dict(plan.parametres_qualite)
+    return out
+
+
+def enregistrer(plan: PlanEchantillonnage, chemin: str | Path) -> None:
+    chemin = Path(chemin)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    chemin.write_text(yaml.safe_dump(vers_dict(plan), allow_unicode=True, sort_keys=False, width=160), encoding="utf-8")
+
+
 # ------------------------------------------------------------------------------------------------ calculs
 def taille_echantillon(p: ParametresTaille) -> int:
     """n0 = z² p (1 − p) / e² × effet de plan, puis correction de population finie n = n0 / (1 + (n0 − 1) / N) ;
