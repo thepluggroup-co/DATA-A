@@ -315,16 +315,19 @@ def creer_app(cfg: Config) -> FastAPI:
                 _echec(u.id, "connexion_echec", compter=True)
             raise HTTPException(401, "identifiants incorrects")
         u.echecs, u.bloque_jusqu = 0, None
-        if u.role in securite.ROLES_USINE and not u.totp_secret:
+        usine = u.role in securite.ROLES_USINE
+        if cfg.double_authentification and usine and not u.totp_secret:
             # Sans secret TOTP, le second facteur exigé partout est impossible : refus clair, aucune session ouverte.
             _echec(u.id, "connexion_refusee_sans_2fa", compter=False)      # journal dans sa propre transaction
             raise HTTPException(403, "double authentification non configurée pour ce compte : demandez à l'administrateur "
                                      "de l'usine de l'activer avant de vous connecter")
         jeton = securite.jeton()
         sw = SessionWeb(empreinte=securite.empreinte(jeton), utilisateur_id=u.id, csrf=securite.jeton(),
-                        second_facteur=False, expire_le=securite.expiration())
+                        second_facteur=usine and not cfg.double_authentification, expire_le=securite.expiration())
         s.add(sw)
-        audit.journaliser(s, "connexion", u.email, organisation_id=u.organisation_id, utilisateur_id=u.id)
+        # Second facteur désactivé (D-061) : la session usine est complète d'emblée, et le journal le dit.
+        audit.journaliser(s, "connexion" if cfg.double_authentification or not usine else "connexion_sans_2fa", u.email,
+                          organisation_id=u.organisation_id, utilisateur_id=u.id)
         _cookie(reponse, jeton, cfg)
         o = s.get(Organisation, u.organisation_id)
         assert o is not None

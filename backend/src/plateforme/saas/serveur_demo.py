@@ -63,12 +63,13 @@ def lancer(args: argparse.Namespace, tmp: Path) -> None:
     import uvicorn
 
     from plateforme.api.app import creer_app
-    from plateforme.api.contexte import Config
+    from plateforme.api.contexte import Config, double_authentification_env
 
     with serveur(tmp / "pg") as url:
         stockage = Path(tmp) / "stockage"
         url_app = preparer(url, stockage)
         cfg = Config(bd_url=url_app, stockage=stockage, web=Path(args.web).resolve() if args.web else None, cookie_securise=False,
+                     double_authentification=double_authentification_env(),
                      tarifs_usine=demo.DEMO / "tarifs.yaml", referentiel=demo.RACINE / "reference" / "geo" / "CMR")
         print(f"DATA'A (démonstration) : http://127.0.0.1:{args.port}  — comptes : {demo.COMPTES} ; mot de passe : {demo.MDP_DEMO}",
               flush=True)

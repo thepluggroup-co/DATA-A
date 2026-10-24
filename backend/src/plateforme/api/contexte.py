@@ -19,6 +19,11 @@ from plateforme.stockage.modeles import Organisation, SessionWeb, Utilisateur
 COOKIE = "dataa_session"
 
 
+def double_authentification_env() -> bool:
+    """DATAA_DOUBLE_AUTH=1 réactive le second facteur de l'usine ; absent ou « 0 » : désactivé (D-061)."""
+    return os.environ.get("DATAA_DOUBLE_AUTH", "0") == "1"
+
+
 @dataclass(frozen=True)
 class Config:
     bd_url: str                      # rôle applicatif plateforme_app (soumis à la RLS), jamais le propriétaire
@@ -27,12 +32,16 @@ class Config:
     cookie_securise: bool = True     # False uniquement en développement local (http)
     tarifs_usine: Path | None = None  # tarifs par défaut de la pré-estimation des briefs
     referentiel: Path | None = None   # reference/geo/<PAYS>
+    # Second facteur (TOTP) pour l'usine et le cabinet. Désactivé sur décision du fondateur (D-061) jusqu'à son signal :
+    # le défaut de l'environnement est « 0 » ; il suffira de poser DATAA_DOUBLE_AUTH=1 pour le réactiver.
+    double_authentification: bool = True
 
     @staticmethod
     def depuis_env() -> Config:
         web = os.environ.get("DATAA_WEB")
         return Config(bd_url=os.environ["DATAA_BD_URL"], stockage=Path(os.environ["DATAA_STOCKAGE"]),
                       web=Path(web) if web else None, cookie_securise=os.environ.get("DATAA_COOKIE_SECURISE", "1") != "0",
+                      double_authentification=double_authentification_env(),
                       tarifs_usine=Path(os.environ["DATAA_TARIFS"]) if os.environ.get("DATAA_TARIFS") else None,
                       referentiel=Path(os.environ["DATAA_REFERENTIEL"]) if os.environ.get("DATAA_REFERENTIEL") else None)
 

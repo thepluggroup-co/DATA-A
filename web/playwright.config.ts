@@ -43,6 +43,7 @@ export default defineConfig({
       TMP: DEMO_TMP,
       TMPDIR: DEMO_TMP,
       DATAA_DEMO_TMP: DEMO_TMP,
+      DATAA_DOUBLE_AUTH: "1",       // les parcours de bout en bout gardent le second facteur testé (D-061)
       DATAA_DEMO: "1",
     },
   },

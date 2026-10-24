@@ -387,3 +387,38 @@ def test_compte_cabinet_sans_totp_refuse_a_la_connexion(env: tuple[Config, str])
     u = _client(cfg)
     _connecter(u, "usine", totp=False)
     assert u.get("/api/moi").json()["second_facteur_requis"] is True
+
+
+def test_double_authentification_desactivee(env: tuple[Config, str]) -> None:
+    """D-061 : second facteur désactivé jusqu'au signal du fondateur. L'usine entre avec le seul mot de passe, un compte
+    cabinet sans secret TOTP aussi, et chaque connexion est journalisée « connexion_sans_2fa »."""
+    from dataclasses import replace
+
+    from plateforme.api import securite
+
+    cfg, url = env
+    sans = replace(cfg, double_authentification=False)
+    u = _client(sans)
+    _connecter(u, "usine", totp=False)
+    assert u.get("/api/moi").json()["second_facteur_requis"] is False
+    assert {"DEMO_A", "DEMO_B"} <= {p["code"] for p in u.get("/api/usine/projets").json()}      # d'autres tests en ajoutent
+    email = "sans-totp-desactive@cabinet.demo.invalid"                                    # compte FICTIF du test
+    m = moteur(url)
+    with m.begin() as cx:
+        org = cx.execute(text("SELECT organisation_id FROM utilisateur WHERE email = :e"), {"e": demo.COMPTES["usine"]}).scalar()
+        cx.execute(text("INSERT INTO utilisateur (id, organisation_id, email, nom, role, hash_mdp, actif, echecs) "
+                        "VALUES (:i, :o, :e, 'Consultant fictif', 'consultant_senior', :h, true, 0)"),
+                   {"i": uuid.uuid4(), "o": org, "e": email, "h": securite.hacher(demo.MDP_DEMO)})
+    c = _client(sans)
+    assert c.post("/api/auth/connexion", json={"email": email, "mot_de_passe": demo.MDP_DEMO}).status_code == 200
+    assert c.get("/api/usine/projets").status_code == 200
+    with m.begin() as cx:
+        assert cx.execute(text("SELECT count(*) FROM journal_audit WHERE action = 'connexion_sans_2fa' AND cible IN (:e, :u)"),
+                          {"e": email, "u": demo.COMPTES["usine"]}).scalar() == 2
+        cx.execute(text("UPDATE utilisateur SET actif = false WHERE email = :e"), {"e": email})
+    m.dispose()
+    c2 = _client(cfg)                                                                    # réactivé : le refus revient
+    assert c2.post("/api/auth/connexion", json={"email": demo.COMPTES["client_a"], "mot_de_passe": demo.MDP_DEMO}).status_code == 200
+    u2 = _client(cfg)
+    _connecter(u2, "usine", totp=False)
+    assert u2.get("/api/usine/projets").status_code == 401
