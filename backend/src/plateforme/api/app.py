@@ -1,4 +1,4 @@
-﻿"""Application FastAPI : authentification, espace client, console usine, sÃ©curitÃ© (en-tÃªtes, CSRF, limites)."""
+"""Application FastAPI : authentification, espace client, console usine, sécurité (en-têtes, CSRF, limites)."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ from plateforme.stockage.modeles import (
 
 METHODES_SURES = {"GET", "HEAD", "OPTIONS"}
 SANS_CSRF = {"/api/auth/connexion"}
-PREFIXE_TERRAIN = "/api/terrain/"      # jeton en en-tÃªte Authorization, jamais de cookie : pas de CSRF possible
+PREFIXE_TERRAIN = "/api/terrain/"      # jeton en en-tête Authorization, jamais de cookie : pas de CSRF possible
 LIMITEES = {"/api/auth/connexion", "/api/terrain/activation"}
 EN_TETES = {
     "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; "
@@ -58,12 +58,12 @@ EN_TETES = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
-    "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)",      # application enquÃªteur : GPS et photo
+    "Permissions-Policy": "camera=(self), microphone=(), geolocation=(self)",      # application enquêteur : GPS et photo
     "Cross-Origin-Opener-Policy": "same-origin",
 }
 
 
-# ------------------------------------------------------------------------------------------------ dÃ©pendances
+# ------------------------------------------------------------------------------------------------ dépendances
 def _client(c: Annotated[Courant, Depends(courant)]) -> Courant:
     return exiger_complet(c)
 
@@ -71,7 +71,7 @@ def _client(c: Annotated[Courant, Depends(courant)]) -> Courant:
 def _usine(c: Annotated[Courant, Depends(courant)]) -> Courant:
     c = exiger_complet(c)
     if not c.usine:
-        raise HTTPException(403, "rÃ©servÃ© Ã  l'usine")
+        raise HTTPException(403, "réservé à l'usine")
     return c
 
 
@@ -85,15 +85,15 @@ def _bd_usine(request: Request, c: Annotated[Courant, Depends(_usine)]) -> Itera
 
 Client = Annotated[Courant, Depends(_client)]
 Usine = Annotated[Courant, Depends(_usine)]
-# scope="function" : la transaction est validÃ©e (ou Ã©choue, visiblement) AVANT l'envoi de la rÃ©ponse. Par dÃ©faut, FastAPI
-# fermerait la dÃ©pendance APRÃˆS l'envoi : le navigateur pourrait relire avant la validation, et un Ã©chec de validation
-# serait masquÃ© derriÃ¨re un 200 (dÃ©faut trouvÃ© par les tests de bout en bout).
+# scope="function" : la transaction est validée (ou échoue, visiblement) AVANT l'envoi de la réponse. Par défaut, FastAPI
+# fermerait la dépendance APRÈS l'envoi : le navigateur pourrait relire avant la validation, et un échec de validation
+# serait masqué derrière un 200 (défaut trouvé par les tests de bout en bout).
 BD = Annotated[Session, Depends(_bd, scope="function")]
 BDUsine = Annotated[Session, Depends(_bd_usine, scope="function")]
 BDAuth = Annotated[Session, Depends(bd_auth, scope="function")]
 
 
-# ------------------------------------------------------------------------------------------------ schÃ©mas
+# ------------------------------------------------------------------------------------------------ schémas
 class Connexion(BaseModel):
     email: str = Field(max_length=254)
     mot_de_passe: str = Field(max_length=200)
@@ -160,6 +160,33 @@ class VersionProjet(BaseModel):
     source: str = Field(default="", max_length=2000)
 
 
+class QuotaEntree(BaseModel):
+    code: int
+    cible: str = Field(min_length=1, max_length=120)
+    villes: dict[str, int] = Field(max_length=100)
+
+
+class PlanEchantillonnageEntree(BaseModel):
+    version: str = Field(max_length=20, description="Version lue : refus si le plan a changé entre-temps")
+    methode: str = Field(pattern=r"^(quotas|aleatoire|stratifie)$")
+    taille: dict[str, Any] | None = None
+    quotas: list[QuotaEntree] = Field(min_length=1, max_length=50)
+
+
+class DictionnaireEntree(BaseModel):
+    version: str = Field(max_length=20, description="Version lue : refus si le dictionnaire a changé entre-temps")
+    dictionnaire: dict[str, Any]
+
+
+class LienModele(BaseModel):
+    modele: str = Field(max_length=4000, description="Lien pré-rempli obtenu dans Google Forms, vide pour l'effacer")
+    enqueteur_modele: str = Field(default="", max_length=15, description="Poste choisi dans Google Forms pour ce lien")
+
+
+class TexteQr(BaseModel):
+    texte: str = Field(min_length=1, max_length=2000)
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
@@ -191,11 +218,13 @@ class DecisionRecommandation(BaseModel):
 def _moi(u: Utilisateur, o: Organisation, sw: SessionWeb) -> dict[str, Any]:
     return {"id": str(u.id), "nom": u.nom, "email": u.email, "role": u.role, "organisation": o.nom,
             "organisation_type": o.type, "csrf": sw.csrf, "permissions": sorted(securite.permissions(u.role)),
-            "second_facteur_requis": bool(u.totp_secret) and u.role in securite.ROLES_USINE and not sw.second_facteur}
+            # Même règle que exiger_complet (contexte.py) : l'interface ne doit jamais croire complète une session que le
+            # serveur refuse.
+            "second_facteur_requis": u.role in securite.ROLES_USINE and not sw.second_facteur}
 
 
 def _projet(s: Session, ident: str) -> Projet:
-    p = s.get(Projet, uuid_ou_404(ident))                        # RLS : un projet d'un autre client est Â« introuvable Â»
+    p = s.get(Projet, uuid_ou_404(ident))                        # RLS : un projet d'un autre client est « introuvable »
     if p is None:
         raise HTTPException(404, "projet introuvable")
     return p
@@ -261,7 +290,7 @@ def creer_app(cfg: Config) -> FastAPI:
             while fenetre and maintenant - fenetre[0] > 600:
                 fenetre.popleft()
             if len(fenetre) >= 20:
-                return JSONResponse({"detail": "trop de tentatives, rÃ©essayez plus tard"}, status_code=429)
+                return JSONResponse({"detail": "trop de tentatives, réessayez plus tard"}, status_code=429)
             fenetre.append(maintenant)
         reponse = await suite(request)
         for k, v in EN_TETES.items():
@@ -274,8 +303,8 @@ def creer_app(cfg: Config) -> FastAPI:
 
     # -------------------------------------------------------------------------------------------- authentification
     def _echec(utilisateur_id: uuid.UUID, action: str, compter: bool) -> None:
-        """Ã‰chec enregistrÃ© dans SA transaction, validÃ©e avant le refus : sinon l'erreur annulerait le compteur de
-        verrouillage et la ligne d'audit (dÃ©faut trouvÃ© par les tests de la phase 7)."""
+        """Échec enregistré dans SA transaction, validée avant le refus : sinon l'erreur annulerait le compteur de
+        verrouillage et la ligne d'audit (défaut trouvé par les tests de la phase 7)."""
         with app.state.dataa.sessions() as s2, s2.begin():
             u = s2.get(Utilisateur, utilisateur_id)
             assert u is not None
@@ -289,17 +318,25 @@ def creer_app(cfg: Config) -> FastAPI:
     def connexion(d: Connexion, reponse: Response, s: BDAuth) -> dict[str, Any]:
         u = utilisateur_par_email(s, d.email)
         if u is not None and u.bloque_jusqu and u.bloque_jusqu > securite.maintenant():
-            raise HTTPException(429, "compte temporairement bloquÃ© aprÃ¨s plusieurs Ã©checs")
+            raise HTTPException(429, "compte temporairement bloqué après plusieurs échecs")
         if u is None or not u.actif or not securite.verifier(u.hash_mdp, d.mot_de_passe):
             if u is not None:
                 _echec(u.id, "connexion_echec", compter=True)
             raise HTTPException(401, "identifiants incorrects")
         u.echecs, u.bloque_jusqu = 0, None
+        usine = u.role in securite.ROLES_USINE
+        if cfg.double_authentification and usine and not u.totp_secret:
+            # Sans secret TOTP, le second facteur exigé partout est impossible : refus clair, aucune session ouverte.
+            _echec(u.id, "connexion_refusee_sans_2fa", compter=False)      # journal dans sa propre transaction
+            raise HTTPException(403, "double authentification non configurée pour ce compte : demandez à l'administrateur "
+                                     "de l'usine de l'activer avant de vous connecter")
         jeton = securite.jeton()
         sw = SessionWeb(empreinte=securite.empreinte(jeton), utilisateur_id=u.id, csrf=securite.jeton(),
-                        second_facteur=False, expire_le=securite.expiration())
+                        second_facteur=usine and not cfg.double_authentification, expire_le=securite.expiration())
         s.add(sw)
-        audit.journaliser(s, "connexion", u.email, organisation_id=u.organisation_id, utilisateur_id=u.id)
+        # Second facteur désactivé (D-061) : la session usine est complète d'emblée, et le journal le dit.
+        audit.journaliser(s, "connexion" if cfg.double_authentification or not usine else "connexion_sans_2fa", u.email,
+                          organisation_id=u.organisation_id, utilisateur_id=u.id)
         _cookie(reponse, jeton, cfg)
         o = s.get(Organisation, u.organisation_id)
         assert o is not None
@@ -311,7 +348,7 @@ def creer_app(cfg: Config) -> FastAPI:
         assert u is not None
         if not u.totp_secret or not securite.verifier_totp(u.totp_secret, d.code):
             _echec(u.id, "totp_echec", compter=True)
-            raise HTTPException(401, "code de vÃ©rification incorrect")
+            raise HTTPException(401, "code de vérification incorrect")
         sw = s.get(SessionWeb, c.session.empreinte)
         assert sw is not None
         sw.second_facteur = True
@@ -326,7 +363,7 @@ def creer_app(cfg: Config) -> FastAPI:
             if sw is not None:
                 s.delete(sw)
         _cookie(reponse, "", cfg, effacer=True)
-        return {"etat": "dÃ©connectÃ©"}
+        return {"etat": "déconnecté"}
 
     @app.get("/api/moi")
     def moi(c: Annotated[Courant, Depends(courant)]) -> dict[str, Any]:
@@ -342,27 +379,27 @@ def creer_app(cfg: Config) -> FastAPI:
     def suivi(ident: str, c: Client, s: BD) -> dict[str, Any]:
         p = _projet(s, ident)
         if not p.dossier or not p.base_analyse:
-            raise HTTPException(409, "suivi indisponible : terrain non dÃ©marrÃ©")
+            raise HTTPException(409, "suivi indisponible : terrain non démarré")
         return donnees.suivi(chemin_sur(cfg, p.dossier), donnees.jeu(chemin_sur(cfg, p.base_analyse)))
 
     @app.get("/api/projets/{ident}/variables")
     def variables(ident: str, c: Client, s: BD) -> list[dict[str, Any]]:
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrÃ©e")
+            raise HTTPException(409, "base d'analyse non livrée")
         return donnees.variables(donnees.jeu(chemin_sur(cfg, p.base_analyse)))
 
     @app.get("/api/projets/{ident}/tri-plats")
     def tri_plat(ident: str, variable: str, c: Client, s: BD) -> dict[str, Any]:
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrÃ©e")
+            raise HTTPException(409, "base d'analyse non livrée")
         jd = donnees.jeu(chemin_sur(cfg, p.base_analyse))
         if variable not in jd.table.columns:
             raise HTTPException(422, "variable inconnue")
         serie = jd.table[variable].dropna().value_counts(dropna=False)
         total = int(serie.sum())
-        return {"variable": variable, "base": total, "lignes": [{"modalite": str(k), "effectif": int(v), "pourcentage": round(float(v) * 100 / total, 2)} for k, v in serie.items()], "avertissements": ["Les modalitÃ©s rares doivent Ãªtre interprÃ©tÃ©es avec prudence."]}
+        return {"variable": variable, "base": total, "lignes": [{"modalite": str(k), "effectif": int(v), "pourcentage": round(float(v) * 100 / total, 2)} for k, v in serie.items()], "avertissements": ["Les modalités rares doivent être interprétées avec prudence."]}
 
     @app.post("/api/projets/{ident}/croisements")
     def croisement(ident: str, d: DemandeCroisement, c: Client, s: BD) -> JSONResponse:
@@ -370,7 +407,7 @@ def creer_app(cfg: Config) -> FastAPI:
             raise HTTPException(403, "permission insuffisante pour calculer un croisement")
         p = _projet(s, ident)
         if not p.base_analyse:
-            raise HTTPException(409, "base d'analyse non livrÃ©e")
+            raise HTTPException(409, "base d'analyse non livrée")
         droits = _droits(s, c.organisation.id) if not c.usine else {}
         plafond = droits.get("croisements_par_mois")
         if plafond is not None and _croisements_du_mois(s, c.organisation.id) >= int(plafond):
@@ -410,7 +447,7 @@ def creer_app(cfg: Config) -> FastAPI:
         ws.title = "CROISEMENT"
         ws.append(["", *[f"{lib} ({le})" for _, lib, le in r.colonnes]])
         for (_, lib), cellules in zip(r.lignes, r.cellules, strict=True):
-            ws.append([lib, *[("â€”" if x.pct is None else round(x.pct, 1)) if x.effectif is not None else "< k" for x in cellules]])
+            ws.append([lib, *[("—" if x.pct is None else round(x.pct, 1)) if x.effectif is not None else "< k" for x in cellules]])
         ws.append(["Base", *r.bases_colonnes])
         ws.append([])
         ws.append(["Commentaire", r.commentaire])
@@ -447,7 +484,7 @@ def creer_app(cfg: Config) -> FastAPI:
         from plateforme.projet.brief import Brief, charger_tarifs, pre_estimation
 
         if not c.usine and "brief.creer" not in securite.permissions(c.utilisateur.role):
-            raise HTTPException(403, "seul l'administrateur du client dÃ©pose un brief")
+            raise HTTPException(403, "seul l'administrateur du client dépose un brief")
         code = "BRIEF_" + uuid.uuid4().hex[:8].upper()
         brief = Brief.model_validate({"etude": code, "version": "01", "titre": d.titre, "besoin": d.besoin,
                                       "antecedents": d.antecedents, "marche": d.marche, "produits": d.produits, "attentes": d.attentes,
@@ -464,7 +501,7 @@ def creer_app(cfg: Config) -> FastAPI:
                     if ref.localite(v).type.value != "ville":
                         raise KeyError(v)
                 except KeyError:
-                    raise HTTPException(422, f"ville inconnue du rÃ©fÃ©rentiel : {v}") from None
+                    raise HTTPException(422, f"ville inconnue du référentiel : {v}") from None
         dossier = Path(str(c.organisation.id)) / code
         chemin = chemin_sur(cfg, str(dossier))
         chemin.mkdir(parents=True, exist_ok=True)
@@ -502,7 +539,7 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.get("/api/cabinet/roles")
     def cabinet_roles(c: Usine) -> list[dict[str, Any]]:
-        """Catalogue des rÃ´les du cabinet et de leurs permissions mÃ©tier."""
+        """Catalogue des rôles du cabinet et de leurs permissions métier."""
         return [{"role": role, "permissions": sorted(perms)} for role, perms in securite.PERMISSIONS_PAR_ROLE.items()
                 if role.startswith("cabinet") or role.startswith("consultant") or role in {"expert_etude", "enqueteur"}]
 
@@ -528,11 +565,11 @@ def creer_app(cfg: Config) -> FastAPI:
                        "expert_etude": ("expert", "livre"), "cabinet_admin": (courant, "livre"), "usine_admin": (courant, "livre")}
         attendu = transitions.get(role)
         if attendu is None or courant != attendu[0]:
-            raise HTTPException(403, f"validation impossible pour le rÃ´le {role} Ã  l'Ã©tape {courant}")
+            raise HTTPException(403, f"validation impossible pour le rôle {role} à l'étape {courant}")
         if attendu[1] == "livre":
             en_attente = [r for r in p.parametres.get("recommandations", []) if r.get("statut") == "a_valider"]
             if en_attente:
-                raise HTTPException(409, f"livraison bloquÃ©e : {len(en_attente)} recommandation(s) Ã  valider")
+                raise HTTPException(409, f"livraison bloquée : {len(en_attente)} recommandation(s) à valider")
         historique = list(p.parametres.get("workflow", {}).get("historique", []))
         historique.append({"etape": attendu[1], "role": role, "utilisateur": c.utilisateur.nom,
                            "commentaire": d.commentaire, "version": d.version, "regle": d.regle,
@@ -675,7 +712,7 @@ def creer_app(cfg: Config) -> FastAPI:
         return {"projet": p.code, "statut": p.statut, "faits": analyses, "actions": recommandations,
                 "interpretations": [r.get("constat", "") for r in recommandations],
                 "risques": [r.get("risque", "") for r in recommandations if r.get("risque")],
-                "limites": ["SynthÃ¨se gÃ©nÃ©rÃ©e uniquement Ã  partir des Ã©lÃ©ments versionnÃ©s et validÃ©s."]}
+                "limites": ["Synthèse générée uniquement à partir des éléments versionnés et validés."]}
 
     @app.get("/api/cabinet/projets/{ident}/qualite-terrain")
     def qualite_terrain(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
@@ -722,6 +759,177 @@ def creer_app(cfg: Config) -> FastAPI:
             return {"coherent": False, "ecarts": [f"projet incomplet : {e}"]}
         return {"coherent": not ecarts, "ecarts": ecarts}
 
+    def _plan_echantillonnage(cfg_: Config, p: Projet) -> tuple[Any, Any, Path]:
+        from plateforme.projet import projet as pj
+
+        if not p.dossier:
+            raise HTTPException(409, "dossier de projet absent")
+        dossier = chemin_sur(cfg_, p.dossier)
+        try:
+            pr = pj.charger(dossier)
+            plan = pr.exiger_echantillonnage()
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise HTTPException(409, f"projet incomplet : {e}") from e
+        return pr, plan, chemin_sur(cfg_, str(Path(p.dossier) / pr.manifeste.plan_echantillonnage))
+
+    def _vue_plan_echantillonnage(pr: Any, plan: Any) -> dict[str, Any]:
+        from plateforme.echantillonnage import plan as pe
+        from plateforme.projet import projet as pj
+
+        taille_calculee = pe.taille_echantillon(plan.taille) if plan.taille is not None else None
+        marge = None
+        if plan.taille is not None and plan.methode is not pe.Methode.QUOTAS and plan.total() > 0:
+            marge = round(pe.marge_obtenue(plan.total(), plan.taille.proportion, plan.taille.confiance, plan.taille.effet_plan), 4)
+        capacites = []
+        if pr.terrain is not None:
+            capacites = [{**c.model_dump(), "ecart": c.ecart} for c in pe.capacite(plan, pr.terrain)]
+        return {"etude": plan.etude, "version": plan.version, "methode": plan.methode.value, "variable_cible": plan.variable_cible,
+                "mention": plan.mention(), "villes": plan.villes, "total": plan.total(), "par_ville": plan.par_ville(),
+                "quotas": [q.model_dump() for q in plan.quotas],
+                "taille": plan.taille.model_dump() if plan.taille else None, "taille_calculee": taille_calculee,
+                "marge_indicative": marge, "capacites": capacites, "ecarts": pj.verifier(pr)}
+
+    @app.get("/api/usine/projets/{ident}/echantillonnage")
+    def usine_echantillonnage(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        pr, plan, _ = _plan_echantillonnage(cfg, _projet(s, ident))
+        return _vue_plan_echantillonnage(pr, plan)
+
+    @app.put("/api/usine/projets/{ident}/echantillonnage")
+    def usine_echantillonnage_enregistrer(ident: str, d: PlanEchantillonnageEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from pydantic import ValidationError
+
+        from plateforme.echantillonnage import plan as pe
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        if "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour modifier le plan d'échantillonnage")
+        p = _projet(s, ident)
+        pr, plan, fichier = _plan_echantillonnage(cfg, p)
+        if d.version != plan.version:
+            raise HTTPException(409, f"le plan est maintenant en version {plan.version} (vous avez chargé la {d.version}) : rechargez la page")
+        nb_fiches = s.scalar(select(func.count()).select_from(MetaFiche).where(MetaFiche.projet_id == p.id)) or 0
+        if nb_fiches:
+            raise HTTPException(409, f"collecte commencée ({nb_fiches} fiche(s)) : le plan ne peut plus être modifié")
+        suivante = f"{int(plan.version) + 1:02d}" if plan.version.isdigit() else f"{plan.version}.1"
+        try:
+            nouveau = pe.PlanEchantillonnage.model_validate({
+                "etude": plan.etude, "version": suivante, "methode": d.methode, "variable_cible": plan.variable_cible,
+                "taille": d.taille, "quotas": [q.model_dump() for q in d.quotas], "parametres_qualite": plan.parametres_qualite})
+        except ValidationError as e:
+            raise HTTPException(422, "plan invalide : " + " ; ".join(x["msg"] for x in e.errors())) from e
+        pe.enregistrer(nouveau, fichier)
+        audit.journaliser(s, "plan_echantillonnage_modifie", p.code,
+                          {"ancienne": plan.version, "nouvelle": suivante, "total": nouveau.total(), "methode": d.methode},
+                          p.organisation_id, c.utilisateur.id)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        return _vue_plan_echantillonnage(pr, pr.exiger_echantillonnage())
+
+    def _dictionnaire_projet(cfg_: Config, p: Projet) -> tuple[Any, Path]:
+        from plateforme.projet import projet as pj
+
+        if not p.dossier:
+            raise HTTPException(409, "dossier de projet absent")
+        try:
+            pr = pj.charger(chemin_sur(cfg_, p.dossier))
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise HTTPException(409, f"projet incomplet : {e}") from e
+        return pr, chemin_sur(cfg_, str(Path(p.dossier) / pr.manifeste.dictionnaire))
+
+    def _vue_dictionnaire(s: Session, p: Projet, pr: Any) -> dict[str, Any]:
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        nb_fiches = s.scalar(select(func.count()).select_from(MetaFiche).where(MetaFiche.projet_id == p.id)) or 0
+        d = pr.dictionnaire
+        return {"version": d.version, "statut": d.statut, "etude": d.etude, "langue_reference": d.langue_reference,
+                "nb_fiches": nb_fiches, "modifiable": nb_fiches == 0,
+                "dictionnaire": d.model_dump(mode="json"), "ecarts": pj.verifier(pr)}
+
+    @app.get("/api/usine/projets/{ident}/dictionnaire")
+    def usine_dictionnaire(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        pr, _ = _dictionnaire_projet(cfg, p)
+        return _vue_dictionnaire(s, p, pr)
+
+    def _examiner_dictionnaire(pr: Any, contenu: dict[str, Any]) -> dict[str, Any]:
+        """Examen commun à la vérification et à l'enregistrement : validation du modèle (toutes les erreurs), cohérence
+        avec le brief et les plans, différences avec la version en place, diagnostic du formulaire généré (dont le chemin
+        d'envoi qui contournerait la question de cible, CLAUDE.md §5). Rien n'est écrit."""
+        import dataclasses
+
+        from pydantic import ValidationError
+
+        from plateforme.dictionnaire import diff
+        from plateforme.dictionnaire.diagnostic import ALERTE, BLOCAGE, diagnostiquer
+        from plateforme.dictionnaire.modele import Dictionnaire
+        from plateforme.generateurs.formulaire import plan_formulaire
+        from plateforme.projet import projet as pj
+
+        ancien = pr.dictionnaire
+        suivante = f"{int(ancien.version) + 1:02d}" if ancien.version.isdigit() else f"{ancien.version}.1"
+        vide = {"suivante": suivante, "nouveau": None, "changements": [], "blocages": [], "alertes": []}
+        try:
+            nouveau = Dictionnaire.model_validate({**contenu, "version": suivante, "etude": ancien.etude})
+        except ValidationError as e:
+            return {**vide, "erreurs": [(f"{'.'.join(str(x) for x in err['loc'])} : " if err["loc"] else "")
+                                        + str(err["msg"]).removeprefix("Value error, ") for err in e.errors()[:20]]}
+        avant = set(pj.verifier(pr))
+        erreurs = [f"incohérent avec le projet : {x}" for x in pj.verifier(dataclasses.replace(pr, dictionnaire=nouveau)) if x not in avant]
+        postes = [e.id for e in pr.terrain.enqueteurs] if pr.terrain is not None else []
+        diag = diagnostiquer(nouveau, plan_formulaire(nouveau, postes))
+        return {**vide, "nouveau": nouveau, "erreurs": erreurs,
+                "changements": [{"type": x.type.value, "question": x.question, "detail": x.detail, "migration": x.migration}
+                                for x in diff.comparer(ancien, nouveau)],
+                "blocages": [f"{li.element} : {li.detail}" for li in diag.lignes if li.statut == BLOCAGE],
+                "alertes": [f"{li.element} : {li.detail}" for li in diag.lignes if li.statut == ALERTE]}
+
+    def _exiger_pilotage(c: Courant) -> None:
+        if "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour modifier le dictionnaire")
+
+    @app.post("/api/usine/projets/{ident}/dictionnaire/verifier")
+    def usine_dictionnaire_verifier(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Vérification à blanc avant enregistrement : erreurs, blocages et alertes du formulaire, changements prévus."""
+        _exiger_pilotage(c)
+        p = _projet(s, ident)
+        pr, _ = _dictionnaire_projet(cfg, p)
+        ex = _examiner_dictionnaire(pr, d.dictionnaire)
+        return {"valide": not ex["erreurs"] and not ex["blocages"], "version_suivante": ex["suivante"], "erreurs": ex["erreurs"],
+                "blocages": ex["blocages"], "alertes": ex["alertes"], "changements": ex["changements"],
+                "modifiable": _vue_dictionnaire(s, p, pr)["modifiable"]}
+
+    @app.put("/api/usine/projets/{ident}/dictionnaire")
+    def usine_dictionnaire_enregistrer(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from plateforme.dictionnaire import fichiers
+        from plateforme.projet import projet as pj
+
+        _exiger_pilotage(c)
+        p = _projet(s, ident)
+        pr, fichier = _dictionnaire_projet(cfg, p)
+        ancien = pr.dictionnaire
+        if d.version != ancien.version:
+            raise HTTPException(409, f"le dictionnaire est maintenant en version {ancien.version} (vous avez chargé la {d.version}) : rechargez la page")
+        vue = _vue_dictionnaire(s, p, pr)
+        if not vue["modifiable"]:
+            raise HTTPException(409, f"collecte commencée ({vue['nb_fiches']} fiche(s)) : le dictionnaire ne peut plus être modifié")
+        ex = _examiner_dictionnaire(pr, d.dictionnaire)
+        if ex["erreurs"]:
+            raise HTTPException(422, "dictionnaire invalide : " + " ; ".join(ex["erreurs"][:10]))
+        if ex["blocages"]:
+            raise HTTPException(422, "formulaire bloqué : " + " ; ".join(ex["blocages"]))
+        nouveau, changements = ex["nouveau"], ex["changements"]
+        archive = fichier.with_name(f"{fichier.stem}.v{ancien.version}{fichier.suffix}")
+        if not archive.exists():
+            archive.write_bytes(fichier.read_bytes())
+        fichiers.enregistrer(nouveau, fichier)
+        audit.journaliser(s, "dictionnaire_modifie", p.code,
+                          {"ancienne": ancien.version, "nouvelle": ex["suivante"], "changements": len(changements),
+                           "recodages": sum(1 for x in changements if x["migration"])},
+                          p.organisation_id, c.utilisateur.id)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        return {**_vue_dictionnaire(s, p, pr), "changements": changements, "alertes": ex["alertes"]}
+
     @app.post("/api/usine/projets/{ident}/documents")
     def usine_documents(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
         from plateforme.documents.produire import ProjetIncoherent, produire
@@ -764,7 +972,7 @@ def creer_app(cfg: Config) -> FastAPI:
         except securite.MotDePasseFaible as e:
             raise HTTPException(422, str(e)) from e
         if utilisateur_par_email(s, d.admin_email) is not None:
-            raise HTTPException(409, "adresse dÃ©jÃ  utilisÃ©e")
+            raise HTTPException(409, "adresse déjà utilisée")
         o = Organisation(nom=d.nom, type="client")
         s.add(o)
         s.flush()
@@ -796,7 +1004,7 @@ def creer_app(cfg: Config) -> FastAPI:
         if f is None:
             raise HTTPException(404, "facture introuvable")
         if f.statut == "annulee":
-            raise HTTPException(409, "facture annulÃ©e")
+            raise HTTPException(409, "facture annulée")
         s.add(Paiement(organisation_id=f.organisation_id, facture_id=f.id, montant=Decimal(str(d.montant)), moyen=d.moyen,
                        reference=d.reference, saisi_par=c.utilisateur.id))
         s.flush()
@@ -822,8 +1030,8 @@ def creer_app(cfg: Config) -> FastAPI:
 
     @app.post("/api/usine/projets/{ident}/missions")
     def usine_missions(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
-        """CrÃ©e un code de mission par poste du plan de terrain qui n'en a pas encore. Les codes ne sont montrÃ©s qu'UNE fois
-        (seule leur empreinte est conservÃ©e) : Ã  imprimer sur l'ordre de mission."""
+        """Crée un code de mission par poste du plan de terrain qui n'en a pas encore. Les codes ne sont montrés qu'UNE fois
+        (seule leur empreinte est conservée) : à imprimer sur l'ordre de mission."""
         from plateforme.projet import projet as pj
 
         p = _projet(s, ident)
@@ -859,6 +1067,104 @@ def creer_app(cfg: Config) -> FastAPI:
                           utilisateur_id=c.utilisateur.id)
         return {"id": str(m.id), "actif": m.actif}
 
+    # -------------------------------------------------------------------------------------------- diffusion des liens
+    def _villes_du_poste(pr: Any, ville_id: str | None) -> list[str]:
+        """Libellés sous lesquels la ville d'un poste peut figurer dans un lien (plan de terrain, puis modalités traduites)."""
+        if ville_id is None:
+            return []
+        v = pr.exiger_terrain().ville(ville_id)
+        q = next((x for x in pr.dictionnaire.questions if x.prerempli == "ville"), None)
+        m = next((m for m in q.modalites if m.code == v.code), None) if q else None
+        return [v.libelle] + (list(m.libelles.values()) if m else [])
+
+    def _modele_google(pr: Any, reglage: dict[str, Any]) -> Any:
+        from plateforme.deploiement import liens
+
+        poste = next((e for e in pr.exiger_terrain().enqueteurs if e.id == reglage.get("enqueteur_modele")), None)
+        if poste is None:
+            raise liens.ModeleInvalide(f"poste « {reglage.get('enqueteur_modele')} » absent du plan de terrain")
+        return liens.analyser_modele(str(reglage.get("modele", "")), poste.id, _villes_du_poste(pr, poste.ville))
+
+    @app.get("/api/usine/projets/{ident}/diffusion")
+    def usine_diffusion(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Un lien par poste du plan de terrain : mission de l'application enquêteur (code d'activation) et, si un lien
+        modèle Google Forms est enregistré, lien pré-rempli (identifiant + ville). Le nombre de liens suit le plan."""
+        from plateforme.deploiement import liens
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        p = _projet(s, ident)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        t = pr.exiger_terrain()
+        missions = {m.enqueteur: m for m in s.scalars(select(Mission).where(Mission.projet_id == p.id))}
+        recues = dict(s.execute(select(MetaFiche.mission_id, func.count()).where(MetaFiche.projet_id == p.id)
+                                .group_by(MetaFiche.mission_id)).all())
+        reglage = p.parametres.get("diffusion_google") or {}
+        modele, erreur_modele = None, ""
+        if reglage:
+            try:
+                modele = _modele_google(pr, reglage)
+            except liens.ModeleInvalide as e:
+                erreur_modele = str(e)
+        postes = []
+        for e in t.enqueteurs:
+            m = missions.get(e.id)
+            ville = t.ville(e.ville) if e.ville else None
+            postes.append({"poste": e.id, "role": e.role.value, "ville": e.ville, "ville_libelle": ville.libelle if ville else None,
+                           "zones": [z.libelle for z in t.zones_de(e)], "localites": len(t.localites_de(e)),
+                           "mission": {"id": str(m.id), "actif": m.actif, "fiches": int(recues.get(m.id, 0))} if m else None,
+                           "lien_google": liens.lien(modele, e.id, ville.libelle if ville else None) if modele else None})
+        return {"projet": p.code, "postes": postes, "sans_mission": sum(1 for x in postes if x["mission"] is None),
+                "google": {"modele": reglage.get("modele"), "enqueteur_modele": reglage.get("enqueteur_modele"), "erreur": erreur_modele}}
+
+    @app.put("/api/usine/projets/{ident}/diffusion/google")
+    def usine_lien_modele(ident: str, d: LienModele, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from plateforme.deploiement import liens
+        from plateforme.projet import projet as pj
+
+        _exiger_pilotage(c)
+        p = _projet(s, ident)
+        reglage = {"modele": d.modele.strip(), "enqueteur_modele": d.enqueteur_modele.strip().upper()}
+        if reglage["modele"]:
+            if not reglage["modele"].startswith("https://docs.google.com/forms/"):
+                raise HTTPException(422, "le lien modèle doit être un lien pré-rempli Google Forms (https://docs.google.com/forms/…)")
+            try:
+                _modele_google(pj.charger(chemin_sur(cfg, p.dossier)), reglage)
+            except liens.ModeleInvalide as e:
+                raise HTTPException(422, f"lien modèle inutilisable : {e}") from e
+            p.parametres = {**p.parametres, "diffusion_google": reglage}
+        else:
+            p.parametres = {k: v for k, v in p.parametres.items() if k != "diffusion_google"}
+        audit.journaliser(s, "lien_modele_google", p.code, {"enqueteur_modele": reglage["enqueteur_modele"], "efface": not reglage["modele"]},
+                          p.organisation_id, c.utilisateur.id)
+        s.flush()
+        return usine_diffusion(ident, c, s)
+
+    @app.post("/api/usine/missions/{ident}/code")
+    def usine_nouveau_code(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Nouveau code d'activation pour rediffuser un lien perdu : l'ancien code cesse d'activer de nouveaux téléphones ;
+        les téléphones déjà activés restent connectés (couper un poste se fait par la révocation de la mission)."""
+        m = s.get(Mission, uuid_ou_404(ident))
+        if m is None:
+            raise HTTPException(404, "mission introuvable")
+        if not m.actif:
+            raise HTTPException(409, "mission révoquée : réactivez-la avant de diffuser un nouveau code")
+        code = terrain.nouveau_code()
+        m.code_empreinte = terrain.empreinte_code(code)
+        audit.journaliser(s, "mission_code_regenere", m.enqueteur, organisation_id=m.organisation_id, utilisateur_id=c.utilisateur.id)
+        return {"poste": m.enqueteur, "code": code}
+
+    @app.post("/api/usine/qr")
+    def usine_qr(d: TexteQr, c: Usine) -> dict[str, str]:
+        """QR code PNG (data URL) d'un lien de diffusion ; calculé ici pour ne dépendre d'aucun service extérieur."""
+        import base64
+
+        import qrcode
+
+        tampon = BytesIO()
+        qrcode.make(d.texte, box_size=6, border=2).save(tampon)
+        return {"png": "data:image/png;base64," + base64.b64encode(tampon.getvalue()).decode()}
+
     # -------------------------------------------------------------------------------------------- front-end
     if cfg.web is not None and (cfg.web / "index.html").exists():
         racine_web = cfg.web.resolve()
@@ -870,11 +1176,11 @@ def creer_app(cfg: Config) -> FastAPI:
             f = (racine_web / chemin).resolve()
             if chemin and f.is_file() and racine_web in f.parents:
                 return FileResponse(f)
-            return FileResponse(racine_web / "index.html")          # application monopage : routes gÃ©rÃ©es par le front
+            return FileResponse(racine_web / "index.html")          # application monopage : routes gérées par le front
 
     return app
 
 
 def application() -> FastAPI:
-    """Point d'entrÃ©e uvicorn (Â« plateforme.api.app:application Â», --factory) : configuration par variables d'environnement."""
+    """Point d'entrée uvicorn (« plateforme.api.app:application », --factory) : configuration par variables d'environnement."""
     return creer_app(Config.depuis_env())

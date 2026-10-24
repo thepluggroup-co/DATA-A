@@ -49,7 +49,13 @@ function nomChamp(champ: Champ): string {
 
 export function TerrainMobile(): ReactNode {
   const [jeton, setJeton] = useState("");
-  const [code, setCode] = useState("");
+  // Lien de diffusion « /terrain#code=XXXX » : le code reste dans le fragment (jamais envoyé au serveur ni journalisé),
+  // pré-remplit l'activation puis disparaît de la barre d'adresse.
+  const [code, setCode] = useState(() => {
+    const lu = new URLSearchParams(window.location.hash.slice(1)).get("code") ?? "";
+    if (lu) window.history.replaceState(null, "", window.location.pathname);
+    return lu;
+  });
   const [pin, setPin] = useState("");
   const [cle, setCle] = useState<CryptoKey | null>(null);
   const [sel, setSel] = useState("");

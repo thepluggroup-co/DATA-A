@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { api, fcfa } from "../api";
+import { api, fcfa, pct } from "../api";
 import { Badge, EnTete, Kpi, StatutProjet } from "../ui";
 
 type Projet = { id: string; code: string; nom: string; statut: string; base_disponible: boolean };
@@ -12,6 +12,7 @@ export function ClientAccueil({ lectureSeule = false }: { lectureSeule?: boolean
   const [ab, setAb] = useState<Abonnement | null>(null);
   const [factures, setFactures] = useState<Facture[]>([]);
   const [erreur, setErreur] = useState("");
+  const [avancement, setAvancement] = useState<{ realise: number; quota: number } | null>(null);
   useEffect(() => {
     if (lectureSeule) {
       api<Projet[]>("/api/projets").then(setProjets).catch((e: Error) => setErreur(e.message));
@@ -21,6 +22,15 @@ export function ClientAccueil({ lectureSeule = false }: { lectureSeule?: boolean
       .then(([p, a, f]) => { setProjets(p); setAb(a); setFactures(f); })
       .catch((e: Error) => setErreur(e.message));
   }, [lectureSeule]);
+  useEffect(() => {
+    const disponibles = projets.filter((p) => p.base_disponible);
+    if (disponibles.length === 0) { setAvancement(null); return; }
+    void Promise.all(disponibles.map((p) => api<{ total_quota: number; total_realise: number }>(`/api/projets/${p.id}/suivi`).catch(() => null)))
+      .then((suivis) => {
+        const ok = suivis.filter((x): x is { total_quota: number; total_realise: number } => x !== null);
+        setAvancement(ok.length ? { realise: ok.reduce((t, x) => t + x.total_realise, 0), quota: ok.reduce((t, x) => t + x.total_quota, 0) } : null);
+      });
+  }, [projets]);
   const aRegler = factures.filter((f) => f.statut !== "payee");
   const plafond = ab?.croisements_par_mois;
   return (
@@ -32,6 +42,8 @@ export function ClientAccueil({ lectureSeule = false }: { lectureSeule?: boolean
              detail={`${projets.filter((p) => p.statut === "livre").length} livrée(s)`} />
         <Kpi icone="fiches" etiquette="Bases d'analyse" valeur={projets.filter((p) => p.base_disponible).length}
              detail="prêtes pour les croisements" />
+        {avancement && avancement.quota > 0 && <Kpi icone="fiches" etiquette="Avancement terrain" valeur={pct((100 * avancement.realise) / avancement.quota)}
+             detail={`${avancement.realise} fiche(s) sur ${avancement.quota} prévues`} jauge={(100 * avancement.realise) / avancement.quota} />}
            {!lectureSeule && <Kpi icone="croisement" etiquette="Croisements du mois" valeur={ab?.croisements_ce_mois ?? "—"}
              detail={plafond !== undefined ? `sur ${plafond} inclus` : "sans plafond"}
              jauge={plafond ? (100 * (ab?.croisements_ce_mois ?? 0)) / plafond : undefined} />}
