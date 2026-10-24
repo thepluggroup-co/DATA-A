@@ -7,7 +7,7 @@ type Module = { titre: string; description: string; icone: string; etat: EtatMod
 
 const modules: Module[] = [
   { titre: "Cadrage & briefs", description: "Créer les briefs client, les projets et les pré-estimations.", icone: "brief", etat: "Actif", vers: "/usine" },
-  { titre: "Formulaires & dictionnaire", description: "Le moteur de dictionnaire est disponible; l’éditeur web reste un prototype non relié aux projets.", icone: "fiches", etat: "Prototype", vers: "/usine/formulaire" },
+  { titre: "Formulaires & dictionnaire", description: "Libellés, aides, libellés des modalités et caractère obligatoire modifiables et enregistrés dans le dossier du projet (versionnés, audités, refusés une fois la collecte commencée). Ajout et suppression de questions, conditions d’affichage et règles de cohérence restent hors de l’éditeur.", icone: "fiches", etat: "Partiel", vers: "/usine/formulaire" },
   { titre: "Échantillonnage & villes", description: "Quotas par cible et par ville modifiables et enregistrés dans le dossier du projet (versionnés, audités, refusés une fois la collecte commencée). Cibles et villes viennent du brief.", icone: "projets", etat: "Partiel", vers: "/usine/echantillonnage" },
   { titre: "Terrain & enquêteurs", description: "Missions et supervision sont reliées à l’API; l’essai sur un téléphone Android reste à faire.", icone: "clients", etat: "Partiel", vers: "/usine/supervision" },
   { titre: "Codification & traitement", description: "Codification, contrôles et exports disponibles par les commandes du backend.", icone: "croisement", etat: "Ligne de commande" },
