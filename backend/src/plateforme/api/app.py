@@ -209,7 +209,9 @@ class DecisionRecommandation(BaseModel):
 def _moi(u: Utilisateur, o: Organisation, sw: SessionWeb) -> dict[str, Any]:
     return {"id": str(u.id), "nom": u.nom, "email": u.email, "role": u.role, "organisation": o.nom,
             "organisation_type": o.type, "csrf": sw.csrf, "permissions": sorted(securite.permissions(u.role)),
-            "second_facteur_requis": bool(u.totp_secret) and u.role in securite.ROLES_USINE and not sw.second_facteur}
+            # Même règle que exiger_complet (contexte.py) : l'interface ne doit jamais croire complète une session que le
+            # serveur refuse.
+            "second_facteur_requis": u.role in securite.ROLES_USINE and not sw.second_facteur}
 
 
 def _projet(s: Session, ident: str) -> Projet:
@@ -313,6 +315,11 @@ def creer_app(cfg: Config) -> FastAPI:
                 _echec(u.id, "connexion_echec", compter=True)
             raise HTTPException(401, "identifiants incorrects")
         u.echecs, u.bloque_jusqu = 0, None
+        if u.role in securite.ROLES_USINE and not u.totp_secret:
+            # Sans secret TOTP, le second facteur exigé partout est impossible : refus clair, aucune session ouverte.
+            _echec(u.id, "connexion_refusee_sans_2fa", compter=False)      # journal dans sa propre transaction
+            raise HTTPException(403, "double authentification non configurée pour ce compte : demandez à l'administrateur "
+                                     "de l'usine de l'activer avant de vous connecter")
         jeton = securite.jeton()
         sw = SessionWeb(empreinte=securite.empreinte(jeton), utilisateur_id=u.id, csrf=securite.jeton(),
                         second_facteur=False, expire_le=securite.expiration())

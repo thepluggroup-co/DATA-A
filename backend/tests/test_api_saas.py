@@ -359,3 +359,31 @@ def test_usine_dictionnaire_lecture_ecriture(env: tuple[Config, str]) -> None:
     assert nouveau["dictionnaire"]["questions"][0]["libelles"] == q0["libelles"]
     # version périmée : refus
     assert u.put(f"/api/usine/projets/{pid}/dictionnaire", json=corps, headers=hu).status_code == 409
+
+
+def test_compte_cabinet_sans_totp_refuse_a_la_connexion(env: tuple[Config, str]) -> None:
+    """Un compte usine/cabinet sans secret TOTP ne peut pas satisfaire le second facteur exigé partout : la connexion est
+    refusée clairement (403), sans session, au lieu d'une session « complète » pour l'interface et refusée par l'API."""
+    from plateforme.api import securite
+
+    cfg, url = env
+    email = "sans-totp@cabinet.demo.invalid"                                              # compte FICTIF du test
+    m = moteur(url)
+    with m.begin() as cx:
+        org = cx.execute(text("SELECT organisation_id FROM utilisateur WHERE email = :e"), {"e": demo.COMPTES["usine"]}).scalar()
+        cx.execute(text("INSERT INTO utilisateur (id, organisation_id, email, nom, role, hash_mdp, actif, echecs) "
+                        "VALUES (:i, :o, :e, 'Consultant fictif', 'consultant_senior', :h, true, 0)"),
+                   {"i": uuid.uuid4(), "o": org, "e": email, "h": securite.hacher(demo.MDP_DEMO)})
+    c = _client(cfg)
+    r = c.post("/api/auth/connexion", json={"email": email, "mot_de_passe": demo.MDP_DEMO})
+    assert r.status_code == 403 and "double authentification non configurée" in r.json()["detail"]
+    assert c.get("/api/moi").status_code == 401                                           # aucune session ouverte
+    with m.begin() as cx:
+        assert cx.execute(text("SELECT count(*) FROM journal_audit WHERE action = 'connexion_refusee_sans_2fa' AND cible = :e"),
+                          {"e": email}).scalar() == 1
+        cx.execute(text("UPDATE utilisateur SET actif = false WHERE email = :e"), {"e": email})
+    m.dispose()
+    # Session usine valide mais second facteur non saisi : l'interface est prévenue (même règle que le serveur)
+    u = _client(cfg)
+    _connecter(u, "usine", totp=False)
+    assert u.get("/api/moi").json()["second_facteur_requis"] is True
