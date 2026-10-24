@@ -173,6 +173,11 @@ class PlanEchantillonnageEntree(BaseModel):
     quotas: list[QuotaEntree] = Field(min_length=1, max_length=50)
 
 
+class DictionnaireEntree(BaseModel):
+    version: str = Field(max_length=20, description="Version lue : refus si le dictionnaire a changé entre-temps")
+    dictionnaire: dict[str, Any]
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
@@ -800,6 +805,76 @@ def creer_app(cfg: Config) -> FastAPI:
                           p.organisation_id, c.utilisateur.id)
         pr = pj.charger(chemin_sur(cfg, p.dossier))
         return _vue_plan_echantillonnage(pr, pr.exiger_echantillonnage())
+
+    def _dictionnaire_projet(cfg_: Config, p: Projet) -> tuple[Any, Path]:
+        from plateforme.projet import projet as pj
+
+        if not p.dossier:
+            raise HTTPException(409, "dossier de projet absent")
+        try:
+            pr = pj.charger(chemin_sur(cfg_, p.dossier))
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            raise HTTPException(409, f"projet incomplet : {e}") from e
+        return pr, chemin_sur(cfg_, str(Path(p.dossier) / pr.manifeste.dictionnaire))
+
+    def _vue_dictionnaire(s: Session, p: Projet, pr: Any) -> dict[str, Any]:
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        nb_fiches = s.scalar(select(func.count()).select_from(MetaFiche).where(MetaFiche.projet_id == p.id)) or 0
+        d = pr.dictionnaire
+        return {"version": d.version, "statut": d.statut, "etude": d.etude, "langue_reference": d.langue_reference,
+                "nb_fiches": nb_fiches, "modifiable": nb_fiches == 0,
+                "dictionnaire": d.model_dump(mode="json"), "ecarts": pj.verifier(pr)}
+
+    @app.get("/api/usine/projets/{ident}/dictionnaire")
+    def usine_dictionnaire(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        p = _projet(s, ident)
+        pr, _ = _dictionnaire_projet(cfg, p)
+        return _vue_dictionnaire(s, p, pr)
+
+    @app.put("/api/usine/projets/{ident}/dictionnaire")
+    def usine_dictionnaire_enregistrer(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        import dataclasses
+
+        from pydantic import ValidationError
+
+        from plateforme.dictionnaire import diff, fichiers
+        from plateforme.dictionnaire.modele import Dictionnaire
+        from plateforme.projet import projet as pj
+
+        if "projet.piloter" not in securite.permissions(c.utilisateur.role):
+            raise HTTPException(403, "permission insuffisante pour modifier le dictionnaire")
+        p = _projet(s, ident)
+        pr, fichier = _dictionnaire_projet(cfg, p)
+        ancien = pr.dictionnaire
+        if d.version != ancien.version:
+            raise HTTPException(409, f"le dictionnaire est maintenant en version {ancien.version} (vous avez chargé la {d.version}) : rechargez la page")
+        vue = _vue_dictionnaire(s, p, pr)
+        if not vue["modifiable"]:
+            raise HTTPException(409, f"collecte commencée ({vue['nb_fiches']} fiche(s)) : le dictionnaire ne peut plus être modifié")
+        suivante = f"{int(ancien.version) + 1:02d}" if ancien.version.isdigit() else f"{ancien.version}.1"
+        try:
+            nouveau = Dictionnaire.model_validate({**d.dictionnaire, "version": suivante, "etude": ancien.etude})
+        except ValidationError as e:
+            raise HTTPException(422, "dictionnaire invalide : " + " ; ".join(
+                f"{'.'.join(str(x) for x in err['loc'])} : {err['msg']}" for err in e.errors()[:10])) from e
+        avant = set(pj.verifier(pr))
+        nouveaux = [x for x in pj.verifier(dataclasses.replace(pr, dictionnaire=nouveau)) if x not in avant]
+        if nouveaux:
+            raise HTTPException(422, "incohérent avec le projet : " + " ; ".join(nouveaux))
+        changements = diff.comparer(ancien, nouveau)
+        archive = fichier.with_name(f"{fichier.stem}.v{ancien.version}{fichier.suffix}")
+        if not archive.exists():
+            archive.write_bytes(fichier.read_bytes())
+        fichiers.enregistrer(nouveau, fichier)
+        audit.journaliser(s, "dictionnaire_modifie", p.code,
+                          {"ancienne": ancien.version, "nouvelle": suivante, "changements": len(changements),
+                           "recodages": sum(1 for x in changements if x.migration)},
+                          p.organisation_id, c.utilisateur.id)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        return {**_vue_dictionnaire(s, p, pr),
+                "changements": [{"type": x.type.value, "question": x.question, "detail": x.detail, "migration": x.migration} for x in changements]}
 
     @app.post("/api/usine/projets/{ident}/documents")
     def usine_documents(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:

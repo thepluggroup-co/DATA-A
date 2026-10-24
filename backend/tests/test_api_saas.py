@@ -333,3 +333,29 @@ def test_usine_plan_echantillonnage_lecture_ecriture(env: tuple[Config, str]) ->
     assert nouveau["par_ville"][v1] == plan["par_ville"][v1] - 1
     # version périmée : refus
     assert u.put(f"/api/usine/projets/{pid}/echantillonnage", json=corps, headers=hu).status_code == 409
+
+
+def test_usine_dictionnaire_lecture_ecriture(env: tuple[Config, str]) -> None:
+    cfg, _ = env
+    u, a = _client(cfg), _client(cfg)
+    hu, _ = _connecter(u, "usine"), _connecter(a, "client_a")
+    pid = next(p["id"] for p in u.get("/api/usine/projets").json() if p["code"] == "DEMO_A")
+    assert a.get(f"/api/usine/projets/{pid}/dictionnaire").status_code == 403            # un client n'entre pas à l'usine
+    vue = u.get(f"/api/usine/projets/{pid}/dictionnaire").json()
+    dico = vue["dictionnaire"]
+    assert vue["modifiable"] is True and vue["nb_fiches"] == 0 and dico["questions"]
+    # code de question invalide : refusé par le modèle du domaine, rien n'est écrit
+    mauvais = {**dico, "questions": [{**dico["questions"][0], "code": "abc"}, *dico["questions"][1:]]}
+    assert u.put(f"/api/usine/projets/{pid}/dictionnaire", json={"version": vue["version"], "dictionnaire": mauvais}, headers=hu).status_code == 422
+    assert u.get(f"/api/usine/projets/{pid}/dictionnaire").json()["version"] == vue["version"]
+    # changement de libellé : accepté, version incrémentée, changement signalé
+    q0 = dict(dico["questions"][0])
+    q0["libelles"] = {**q0["libelles"], vue["langue_reference"]: q0["libelles"][vue["langue_reference"]] + " (reformulé)"}
+    corps = {"version": vue["version"], "dictionnaire": {**dico, "questions": [q0, *dico["questions"][1:]]}}
+    r = u.put(f"/api/usine/projets/{pid}/dictionnaire", json=corps, headers=hu)
+    assert r.status_code == 200, r.text
+    nouveau = r.json()
+    assert nouveau["version"] != vue["version"] and nouveau["changements"]
+    assert nouveau["dictionnaire"]["questions"][0]["libelles"] == q0["libelles"]
+    # version périmée : refus
+    assert u.put(f"/api/usine/projets/{pid}/dictionnaire", json=corps, headers=hu).status_code == 409
