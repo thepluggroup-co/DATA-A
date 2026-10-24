@@ -422,3 +422,92 @@ def test_double_authentification_desactivee(env: tuple[Config, str]) -> None:
     u2 = _client(cfg)
     _connecter(u2, "usine", totp=False)
     assert u2.get("/api/usine/projets").status_code == 401
+
+
+def test_usine_formulaire_edition_complete_et_verification(env: tuple[Config, str]) -> None:
+    """Atelier du formulaire : vérification à blanc (rien n'est écrit), ajout d'une question choix multiple, suppression,
+    condition d'affichage, règle de cohérence ; erreurs listées une à une ; enregistrement refusé si le formulaire est bloqué."""
+    cfg, _ = env
+    u = _client(cfg)
+    hu = _connecter(u, "usine")
+    pid = next(p["id"] for p in u.get("/api/usine/projets").json() if p["code"] == "DEMO_B")
+    vue = u.get(f"/api/usine/projets/{pid}/dictionnaire").json()
+    dico, lr = vue["dictionnaire"], vue["langue_reference"]
+    nouvelle = {"numero": len(dico["questions"]) + 1, "code": "MARQCONN", "section": dico["sections"][-1]["id"],
+                "libelles": {lr: "Marques connues (fictif)"}, "type": "choix_multiple", "obligatoire": False, "aide": {},
+                "modalites": [{"code": 1, "libelles": {lr: "Marque A"}, "variable": "MARQCONA"},
+                              {"code": 2, "libelles": {lr: "Marque B"}, "variable": "MARQCONB"}],
+                "lignes": [], "condition": "VOUSETES in (1, 2)"}
+    corps = {"version": vue["version"], "dictionnaire": {**dico, "questions": [*dico["questions"], nouvelle],
+             "regles_coherence": [*dico["regles_coherence"], {"code": "R_FICTIVE", "expression": "MARQCONA == 1 and MARQCONB == 1",
+                                                               "description": {lr: "Règle fictive"}}]}}
+    v = u.post(f"/api/usine/projets/{pid}/dictionnaire/verifier", json=corps, headers=hu)
+    assert v.status_code == 200, v.text
+    v = v.json()
+    assert v["valide"] is True and v["erreurs"] == [] and v["blocages"] == []
+    assert {"question ajoutée", "règle ajoutée"} <= {c["type"] for c in v["changements"]}
+    assert u.get(f"/api/usine/projets/{pid}/dictionnaire").json()["version"] == vue["version"]    # vérifier n'écrit rien
+    # plusieurs erreurs à la fois : code invalide, condition sur une variable inconnue
+    faux = {**corps, "dictionnaire": {**corps["dictionnaire"], "questions": [*dico["questions"],
+            {**nouvelle, "code": "marq", "condition": "INCONNUE == 1"}]}}
+    e = u.post(f"/api/usine/projets/{pid}/dictionnaire/verifier", json=faux, headers=hu).json()
+    assert e["valide"] is False and any("8 lettres" in x for x in e["erreurs"])
+    assert u.put(f"/api/usine/projets/{pid}/dictionnaire", json=faux, headers=hu).status_code == 422
+    # enregistrement de l'ajout : version suivante, question et règle relues
+    r = u.put(f"/api/usine/projets/{pid}/dictionnaire", json=corps, headers=hu)
+    assert r.status_code == 200, r.text
+    lu = r.json()
+    assert int(lu["version"]) == int(vue["version"]) + 1
+    assert any(q["code"] == "MARQCONN" and q["condition"] == "VOUSETES in (1, 2)" for q in lu["dictionnaire"]["questions"])
+    assert any(x["code"] == "R_FICTIVE" for x in lu["dictionnaire"]["regles_coherence"])
+    # suppression de la question ajoutée (et de sa règle) : version suivante encore
+    retour = {"version": lu["version"], "dictionnaire": {**lu["dictionnaire"],
+              "questions": [q for q in lu["dictionnaire"]["questions"] if q["code"] != "MARQCONN"], "regles_coherence": dico["regles_coherence"]}}
+    r2 = u.put(f"/api/usine/projets/{pid}/dictionnaire", json=retour, headers=hu)
+    assert r2.status_code == 200, r2.text
+    assert "question supprimée" in {c["type"] for c in r2.json()["changements"]}
+    # la question de cible ne peut pas disparaître : le brief en a besoin (incohérent avec le projet)
+    sans_cible = {"version": r2.json()["version"], "dictionnaire": {**r2.json()["dictionnaire"],
+                  "questions": [q for q in r2.json()["dictionnaire"]["questions"] if q.get("role") != "cible"]}}
+    assert u.post(f"/api/usine/projets/{pid}/dictionnaire/verifier", json=sans_cible, headers=hu).json()["valide"] is False
+    assert u.put(f"/api/usine/projets/{pid}/dictionnaire", json=sans_cible, headers=hu).status_code == 422
+
+
+def test_usine_diffusion_des_liens(env: tuple[Config, str]) -> None:
+    """Un lien par poste du plan de terrain : codes créés une fois, régénération (l'ancien code n'active plus), lien modèle
+    Google Forms vérifié puis décliné par poste, QR code ; le client n'y a pas accès."""
+    cfg, _ = env
+    u, a = _client(cfg), _client(cfg)
+    hu = _connecter(u, "usine")
+    _connecter(a, "client_b")
+    pid = next(p["id"] for p in u.get("/api/usine/projets").json() if p["code"] == "DEMO_B")
+    assert a.get(f"/api/usine/projets/{pid}/diffusion").status_code == 403
+    d = u.get(f"/api/usine/projets/{pid}/diffusion").json()
+    postes = [p["poste"] for p in d["postes"]]
+    assert postes and d["sans_mission"] == len(postes) and all(p["lien_google"] is None for p in d["postes"])
+    codes = u.post(f"/api/usine/projets/{pid}/missions", headers=hu).json()["codes"]
+    assert sorted(codes) == sorted(postes)
+    d = u.get(f"/api/usine/projets/{pid}/diffusion").json()
+    assert d["sans_mission"] == 0
+    premier = d["postes"][0]
+    # le lien de diffusion active le téléphone ; après régénération, seul le nouveau code fonctionne
+    t = _client(cfg)
+    assert t.post("/api/terrain/activation", json={"code": codes[premier["poste"]]}).status_code == 200
+    r = u.post(f"/api/usine/missions/{premier['mission']['id']}/code", headers=hu)
+    assert r.status_code == 200 and r.json()["poste"] == premier["poste"]
+    assert t.post("/api/terrain/activation", json={"code": codes[premier["poste"]]}).status_code == 401
+    assert t.post("/api/terrain/activation", json={"code": r.json()["code"]}).status_code == 200
+    # lien modèle Google Forms : refusé s'il ne porte pas le poste annoncé, puis décliné pour chaque poste
+    ville = premier["ville_libelle"]
+    base = "https://docs.google.com/forms/d/e/FICTIF/viewform?usp=pp_url"
+    mauvais = u.put(f"/api/usine/projets/{pid}/diffusion/google", json={"modele": f"{base}&entry.1=AUTRE&entry.2={ville}",
+                                                                         "enqueteur_modele": premier["poste"]}, headers=hu)
+    assert mauvais.status_code == 422
+    ok = u.put(f"/api/usine/projets/{pid}/diffusion/google", json={"modele": f"{base}&entry.1={premier['poste']}&entry.2={ville}&entry.3=x",
+                                                                    "enqueteur_modele": premier["poste"]}, headers=hu)
+    assert ok.status_code == 200, ok.text
+    for p in ok.json()["postes"]:
+        assert p["lien_google"] and f"entry.1={p['poste']}" in p["lien_google"] and "entry.3=x" in p["lien_google"]
+    assert u.put(f"/api/usine/projets/{pid}/diffusion/google", json={"modele": ""}, headers=hu).json()["google"]["modele"] is None
+    qr = u.post("/api/usine/qr", json={"texte": "https://exemple.invalid/terrain#code=FICTIF"}, headers=hu)
+    assert qr.status_code == 200 and qr.json()["png"].startswith("data:image/png;base64,")

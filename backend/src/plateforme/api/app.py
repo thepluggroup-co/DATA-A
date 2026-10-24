@@ -178,6 +178,15 @@ class DictionnaireEntree(BaseModel):
     dictionnaire: dict[str, Any]
 
 
+class LienModele(BaseModel):
+    modele: str = Field(max_length=4000, description="Lien pré-rempli obtenu dans Google Forms, vide pour l'effacer")
+    enqueteur_modele: str = Field(default="", max_length=15, description="Poste choisi dans Google Forms pour ce lien")
+
+
+class TexteQr(BaseModel):
+    texte: str = Field(min_length=1, max_length=2000)
+
+
 class QuestionAssistant(BaseModel):
     question: str = Field(min_length=2, max_length=2000)
     projet: str | None = None
@@ -843,18 +852,59 @@ def creer_app(cfg: Config) -> FastAPI:
         pr, _ = _dictionnaire_projet(cfg, p)
         return _vue_dictionnaire(s, p, pr)
 
-    @app.put("/api/usine/projets/{ident}/dictionnaire")
-    def usine_dictionnaire_enregistrer(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+    def _examiner_dictionnaire(pr: Any, contenu: dict[str, Any]) -> dict[str, Any]:
+        """Examen commun à la vérification et à l'enregistrement : validation du modèle (toutes les erreurs), cohérence
+        avec le brief et les plans, différences avec la version en place, diagnostic du formulaire généré (dont le chemin
+        d'envoi qui contournerait la question de cible, CLAUDE.md §5). Rien n'est écrit."""
         import dataclasses
 
         from pydantic import ValidationError
 
-        from plateforme.dictionnaire import diff, fichiers
+        from plateforme.dictionnaire import diff
+        from plateforme.dictionnaire.diagnostic import ALERTE, BLOCAGE, diagnostiquer
         from plateforme.dictionnaire.modele import Dictionnaire
+        from plateforme.generateurs.formulaire import plan_formulaire
         from plateforme.projet import projet as pj
 
+        ancien = pr.dictionnaire
+        suivante = f"{int(ancien.version) + 1:02d}" if ancien.version.isdigit() else f"{ancien.version}.1"
+        vide = {"suivante": suivante, "nouveau": None, "changements": [], "blocages": [], "alertes": []}
+        try:
+            nouveau = Dictionnaire.model_validate({**contenu, "version": suivante, "etude": ancien.etude})
+        except ValidationError as e:
+            return {**vide, "erreurs": [(f"{'.'.join(str(x) for x in err['loc'])} : " if err["loc"] else "")
+                                        + str(err["msg"]).removeprefix("Value error, ") for err in e.errors()[:20]]}
+        avant = set(pj.verifier(pr))
+        erreurs = [f"incohérent avec le projet : {x}" for x in pj.verifier(dataclasses.replace(pr, dictionnaire=nouveau)) if x not in avant]
+        postes = [e.id for e in pr.terrain.enqueteurs] if pr.terrain is not None else []
+        diag = diagnostiquer(nouveau, plan_formulaire(nouveau, postes))
+        return {**vide, "nouveau": nouveau, "erreurs": erreurs,
+                "changements": [{"type": x.type.value, "question": x.question, "detail": x.detail, "migration": x.migration}
+                                for x in diff.comparer(ancien, nouveau)],
+                "blocages": [f"{li.element} : {li.detail}" for li in diag.lignes if li.statut == BLOCAGE],
+                "alertes": [f"{li.element} : {li.detail}" for li in diag.lignes if li.statut == ALERTE]}
+
+    def _exiger_pilotage(c: Courant) -> None:
         if "projet.piloter" not in securite.permissions(c.utilisateur.role):
             raise HTTPException(403, "permission insuffisante pour modifier le dictionnaire")
+
+    @app.post("/api/usine/projets/{ident}/dictionnaire/verifier")
+    def usine_dictionnaire_verifier(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Vérification à blanc avant enregistrement : erreurs, blocages et alertes du formulaire, changements prévus."""
+        _exiger_pilotage(c)
+        p = _projet(s, ident)
+        pr, _ = _dictionnaire_projet(cfg, p)
+        ex = _examiner_dictionnaire(pr, d.dictionnaire)
+        return {"valide": not ex["erreurs"] and not ex["blocages"], "version_suivante": ex["suivante"], "erreurs": ex["erreurs"],
+                "blocages": ex["blocages"], "alertes": ex["alertes"], "changements": ex["changements"],
+                "modifiable": _vue_dictionnaire(s, p, pr)["modifiable"]}
+
+    @app.put("/api/usine/projets/{ident}/dictionnaire")
+    def usine_dictionnaire_enregistrer(ident: str, d: DictionnaireEntree, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from plateforme.dictionnaire import fichiers
+        from plateforme.projet import projet as pj
+
+        _exiger_pilotage(c)
         p = _projet(s, ident)
         pr, fichier = _dictionnaire_projet(cfg, p)
         ancien = pr.dictionnaire
@@ -863,28 +913,22 @@ def creer_app(cfg: Config) -> FastAPI:
         vue = _vue_dictionnaire(s, p, pr)
         if not vue["modifiable"]:
             raise HTTPException(409, f"collecte commencée ({vue['nb_fiches']} fiche(s)) : le dictionnaire ne peut plus être modifié")
-        suivante = f"{int(ancien.version) + 1:02d}" if ancien.version.isdigit() else f"{ancien.version}.1"
-        try:
-            nouveau = Dictionnaire.model_validate({**d.dictionnaire, "version": suivante, "etude": ancien.etude})
-        except ValidationError as e:
-            raise HTTPException(422, "dictionnaire invalide : " + " ; ".join(
-                f"{'.'.join(str(x) for x in err['loc'])} : {err['msg']}" for err in e.errors()[:10])) from e
-        avant = set(pj.verifier(pr))
-        nouveaux = [x for x in pj.verifier(dataclasses.replace(pr, dictionnaire=nouveau)) if x not in avant]
-        if nouveaux:
-            raise HTTPException(422, "incohérent avec le projet : " + " ; ".join(nouveaux))
-        changements = diff.comparer(ancien, nouveau)
+        ex = _examiner_dictionnaire(pr, d.dictionnaire)
+        if ex["erreurs"]:
+            raise HTTPException(422, "dictionnaire invalide : " + " ; ".join(ex["erreurs"][:10]))
+        if ex["blocages"]:
+            raise HTTPException(422, "formulaire bloqué : " + " ; ".join(ex["blocages"]))
+        nouveau, changements = ex["nouveau"], ex["changements"]
         archive = fichier.with_name(f"{fichier.stem}.v{ancien.version}{fichier.suffix}")
         if not archive.exists():
             archive.write_bytes(fichier.read_bytes())
         fichiers.enregistrer(nouveau, fichier)
         audit.journaliser(s, "dictionnaire_modifie", p.code,
-                          {"ancienne": ancien.version, "nouvelle": suivante, "changements": len(changements),
-                           "recodages": sum(1 for x in changements if x.migration)},
+                          {"ancienne": ancien.version, "nouvelle": ex["suivante"], "changements": len(changements),
+                           "recodages": sum(1 for x in changements if x["migration"])},
                           p.organisation_id, c.utilisateur.id)
         pr = pj.charger(chemin_sur(cfg, p.dossier))
-        return {**_vue_dictionnaire(s, p, pr),
-                "changements": [{"type": x.type.value, "question": x.question, "detail": x.detail, "migration": x.migration} for x in changements]}
+        return {**_vue_dictionnaire(s, p, pr), "changements": changements, "alertes": ex["alertes"]}
 
     @app.post("/api/usine/projets/{ident}/documents")
     def usine_documents(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
@@ -1022,6 +1066,104 @@ def creer_app(cfg: Config) -> FastAPI:
         audit.journaliser(s, "mission_reactivee" if d.actif else "mission_revoquee", m.enqueteur, organisation_id=m.organisation_id,
                           utilisateur_id=c.utilisateur.id)
         return {"id": str(m.id), "actif": m.actif}
+
+    # -------------------------------------------------------------------------------------------- diffusion des liens
+    def _villes_du_poste(pr: Any, ville_id: str | None) -> list[str]:
+        """Libellés sous lesquels la ville d'un poste peut figurer dans un lien (plan de terrain, puis modalités traduites)."""
+        if ville_id is None:
+            return []
+        v = pr.exiger_terrain().ville(ville_id)
+        q = next((x for x in pr.dictionnaire.questions if x.prerempli == "ville"), None)
+        m = next((m for m in q.modalites if m.code == v.code), None) if q else None
+        return [v.libelle] + (list(m.libelles.values()) if m else [])
+
+    def _modele_google(pr: Any, reglage: dict[str, Any]) -> Any:
+        from plateforme.deploiement import liens
+
+        poste = next((e for e in pr.exiger_terrain().enqueteurs if e.id == reglage.get("enqueteur_modele")), None)
+        if poste is None:
+            raise liens.ModeleInvalide(f"poste « {reglage.get('enqueteur_modele')} » absent du plan de terrain")
+        return liens.analyser_modele(str(reglage.get("modele", "")), poste.id, _villes_du_poste(pr, poste.ville))
+
+    @app.get("/api/usine/projets/{ident}/diffusion")
+    def usine_diffusion(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Un lien par poste du plan de terrain : mission de l'application enquêteur (code d'activation) et, si un lien
+        modèle Google Forms est enregistré, lien pré-rempli (identifiant + ville). Le nombre de liens suit le plan."""
+        from plateforme.deploiement import liens
+        from plateforme.projet import projet as pj
+        from plateforme.stockage.modeles import MetaFiche
+
+        p = _projet(s, ident)
+        pr = pj.charger(chemin_sur(cfg, p.dossier))
+        t = pr.exiger_terrain()
+        missions = {m.enqueteur: m for m in s.scalars(select(Mission).where(Mission.projet_id == p.id))}
+        recues = dict(s.execute(select(MetaFiche.mission_id, func.count()).where(MetaFiche.projet_id == p.id)
+                                .group_by(MetaFiche.mission_id)).all())
+        reglage = p.parametres.get("diffusion_google") or {}
+        modele, erreur_modele = None, ""
+        if reglage:
+            try:
+                modele = _modele_google(pr, reglage)
+            except liens.ModeleInvalide as e:
+                erreur_modele = str(e)
+        postes = []
+        for e in t.enqueteurs:
+            m = missions.get(e.id)
+            ville = t.ville(e.ville) if e.ville else None
+            postes.append({"poste": e.id, "role": e.role.value, "ville": e.ville, "ville_libelle": ville.libelle if ville else None,
+                           "zones": [z.libelle for z in t.zones_de(e)], "localites": len(t.localites_de(e)),
+                           "mission": {"id": str(m.id), "actif": m.actif, "fiches": int(recues.get(m.id, 0))} if m else None,
+                           "lien_google": liens.lien(modele, e.id, ville.libelle if ville else None) if modele else None})
+        return {"projet": p.code, "postes": postes, "sans_mission": sum(1 for x in postes if x["mission"] is None),
+                "google": {"modele": reglage.get("modele"), "enqueteur_modele": reglage.get("enqueteur_modele"), "erreur": erreur_modele}}
+
+    @app.put("/api/usine/projets/{ident}/diffusion/google")
+    def usine_lien_modele(ident: str, d: LienModele, c: Usine, s: BDUsine) -> dict[str, Any]:
+        from plateforme.deploiement import liens
+        from plateforme.projet import projet as pj
+
+        _exiger_pilotage(c)
+        p = _projet(s, ident)
+        reglage = {"modele": d.modele.strip(), "enqueteur_modele": d.enqueteur_modele.strip().upper()}
+        if reglage["modele"]:
+            if not reglage["modele"].startswith("https://docs.google.com/forms/"):
+                raise HTTPException(422, "le lien modèle doit être un lien pré-rempli Google Forms (https://docs.google.com/forms/…)")
+            try:
+                _modele_google(pj.charger(chemin_sur(cfg, p.dossier)), reglage)
+            except liens.ModeleInvalide as e:
+                raise HTTPException(422, f"lien modèle inutilisable : {e}") from e
+            p.parametres = {**p.parametres, "diffusion_google": reglage}
+        else:
+            p.parametres = {k: v for k, v in p.parametres.items() if k != "diffusion_google"}
+        audit.journaliser(s, "lien_modele_google", p.code, {"enqueteur_modele": reglage["enqueteur_modele"], "efface": not reglage["modele"]},
+                          p.organisation_id, c.utilisateur.id)
+        s.flush()
+        return usine_diffusion(ident, c, s)
+
+    @app.post("/api/usine/missions/{ident}/code")
+    def usine_nouveau_code(ident: str, c: Usine, s: BDUsine) -> dict[str, Any]:
+        """Nouveau code d'activation pour rediffuser un lien perdu : l'ancien code cesse d'activer de nouveaux téléphones ;
+        les téléphones déjà activés restent connectés (couper un poste se fait par la révocation de la mission)."""
+        m = s.get(Mission, uuid_ou_404(ident))
+        if m is None:
+            raise HTTPException(404, "mission introuvable")
+        if not m.actif:
+            raise HTTPException(409, "mission révoquée : réactivez-la avant de diffuser un nouveau code")
+        code = terrain.nouveau_code()
+        m.code_empreinte = terrain.empreinte_code(code)
+        audit.journaliser(s, "mission_code_regenere", m.enqueteur, organisation_id=m.organisation_id, utilisateur_id=c.utilisateur.id)
+        return {"poste": m.enqueteur, "code": code}
+
+    @app.post("/api/usine/qr")
+    def usine_qr(d: TexteQr, c: Usine) -> dict[str, str]:
+        """QR code PNG (data URL) d'un lien de diffusion ; calculé ici pour ne dépendre d'aucun service extérieur."""
+        import base64
+
+        import qrcode
+
+        tampon = BytesIO()
+        qrcode.make(d.texte, box_size=6, border=2).save(tampon)
+        return {"png": "data:image/png;base64," + base64.b64encode(tampon.getvalue()).decode()}
 
     # -------------------------------------------------------------------------------------------- front-end
     if cfg.web is not None and (cfg.web / "index.html").exists():
