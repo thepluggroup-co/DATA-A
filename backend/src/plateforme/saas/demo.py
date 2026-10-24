@@ -1,4 +1,4 @@
-﻿"""Jeu de démonstration ENTIÈREMENT FICTIF : une usine (TOTP), deux clients isolés (A et B), leurs projets bâtis sur le
+"""Jeu de démonstration ENTIÈREMENT FICTIF : une usine (TOTP), deux clients isolés (A et B), leurs projets bâtis sur le
 projet fictif « 3 villes » (phase 6), des bases d'analyse SYNTHÉTIQUES (réponses tirées au hasard, graine fixe, aucune
 personne réelle), des formules d'abonnement aux montants fictifs et une facture.
 
@@ -27,7 +27,7 @@ RACINE = Path(__file__).resolve().parents[4]
 DEMO = RACINE / "projets" / "demo_3_villes"
 MDP_DEMO = "Demo-DATAA-2026"                      # démonstration uniquement
 TOTP_DEMO = "JBSWY3DPEHPK3PXP"                    # secret TOTP de démonstration (exemple RFC, public)
-CODE_MISSION_DEMO = "DEMO-ENQ1-A2026-FICTIF"   # mission de dÃ©monstration (poste ENQ1 du client A), publique
+CODE_MISSION_DEMO = "DEMO-ENQ1-A2026-FICTIF"   # mission de démonstration (poste ENQ1 du client A), publique
 COMPTES = {"usine": "usine@demo.invalid", "client_a": "admin@client-a.demo.invalid", "lecteur_a": "lecteur@client-a.demo.invalid",
            "client_b": "admin@client-b.demo.invalid"}
 
